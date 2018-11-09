@@ -1322,33 +1322,37 @@ static int ue_PyUObject_setattro(ue_PyUObject *self, PyObject *attr_name, PyObje
 		if (u_property)
 		{
 #if WITH_EDITOR
-			self->ue_object->PreEditChange(u_property);
+            if (!self->creating)
+                self->ue_object->PreEditChange(u_property);
 #endif
 			if (ue_py_convert_pyobject(value, u_property, (uint8*)self->ue_object, 0))
 			{
 #if WITH_EDITOR
-				FPropertyChangedEvent PropertyEvent(u_property, EPropertyChangeType::ValueSet);
-				self->ue_object->PostEditChangeProperty(PropertyEvent);
+                if (!self->creating)
+                {
+                    FPropertyChangedEvent PropertyEvent(u_property, EPropertyChangeType::ValueSet);
+                    self->ue_object->PostEditChangeProperty(PropertyEvent);
 
-				if (self->ue_object->HasAnyFlags(RF_ArchetypeObject | RF_ClassDefaultObject))
-				{
-					TArray<UObject *> Instances;
-					self->ue_object->GetArchetypeInstances(Instances);
-					for (UObject *Instance : Instances)
-					{
-						Instance->PreEditChange(u_property);
-						if (ue_py_convert_pyobject(value, u_property, (uint8*)Instance, 0))
-						{
-							FPropertyChangedEvent InstancePropertyEvent(u_property, EPropertyChangeType::ValueSet);
-							Instance->PostEditChangeProperty(InstancePropertyEvent);
-						}
-						else
-						{
-							PyErr_SetString(PyExc_ValueError, "invalid value for UProperty");
-							return -1;
-						}
-					}
-				}
+                    if (self->ue_object->HasAnyFlags(RF_ArchetypeObject | RF_ClassDefaultObject))
+                    {
+                        TArray<UObject *> Instances;
+                        self->ue_object->GetArchetypeInstances(Instances);
+                        for (UObject *Instance : Instances)
+                        {
+                            Instance->PreEditChange(u_property);
+                            if (ue_py_convert_pyobject(value, u_property, (uint8*)Instance, 0))
+                            {
+                                FPropertyChangedEvent InstancePropertyEvent(u_property, EPropertyChangeType::ValueSet);
+                                Instance->PostEditChangeProperty(InstancePropertyEvent);
+                            }
+                            else
+                            {
+                                PyErr_SetString(PyExc_ValueError, "invalid value for UProperty");
+                                return -1;
+                            }
+                        }
+                    }
+                }
 #endif
 				return 0;
 			}

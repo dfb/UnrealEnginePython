@@ -46,6 +46,8 @@ typedef struct
 	int auto_rooted;
 	// if owned the life of the UObject is related to the life of PyObject
 	int owned;
+    // true during object instantiation
+    bool creating;
 } ue_PyUObject;
 
 UNREALENGINEPYTHON_API void ue_py_register_magic_module(char *name, PyObject *(*)());

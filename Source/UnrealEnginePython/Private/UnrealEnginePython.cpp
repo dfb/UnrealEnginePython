@@ -26,6 +26,7 @@
 
 void unreal_engine_init_py_module();
 void init_unreal_engine_builtin();
+void fm_init_module();
 
 #if PLATFORM_LINUX
 const char *ue4_module_options = "linux_global_symbols";
@@ -125,6 +126,7 @@ void FUnrealEnginePythonModule::UESetupPythonInterpreter(bool verbose)
 	PySys_SetArgv(Args.Num(), argv);
 
 	unreal_engine_init_py_module();
+    fm_init_module();
 
 	PyObject *py_sys = PyImport_ImportModule("sys");
 	PyObject *py_sys_dict = PyModule_GetDict(py_sys);

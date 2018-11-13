@@ -175,7 +175,7 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
 		// create and bind an instance of the Python class. By convention, the bridge class takes a single param that tells
         // the address of the corresponding UObject
         UObject *engineObj = objInitializer.GetObj();
-        LOG("ClassConstructor initializing UObject %llX", (unsigned long long)engineObj);
+        //LOG("ClassConstructor initializing UObject %llX", (unsigned long long)engineObj);
         PyObject *initArgs = Py_BuildValue("(K)", (unsigned long long)engineObj);
         PyObject *pyInst = PyObject_CallObject(fmClass->pyClass, initArgs);
         Py_DECREF(initArgs);
@@ -336,7 +336,7 @@ static PyMethodDef module_methods[] = {
 // creates and sets up the special 'fm' module in the interpreter
 void fm_init_module()
 {
-    LOG("Initializing module");
+    //LOG("Initializing module");
 	GAllowActorScriptExecutionInEditor = true; // without this, UFUNCTION calls in the editor often don't work - maybe that's intentional?
     PyObject *module = PyImport_AddModule("fm");
     PyObject *module_dict = PyModule_GetDict(module);

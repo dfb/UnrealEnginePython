@@ -153,10 +153,7 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
     newClass->pyClass = pyClass;
 
     // TODO: any uprop the py class is declaring that is not already present in a parent class needs to be added to newClass
-    // TODO: any ufunc the py class is declaring that is not already present in a parent class needs to be added to newClass
     // TODO: add to newClass a UFUNCTION for ReceiveDestroy (I guess?) that decrefs and clears our ref to the py instance we created
-    // TODO: for each ufunc the py class is declaring, add a UFUNC to the new class that is a shim that gets the PyObj prop from the instance (see
-    //  the constructor below) and calls the provided py callable
 
     // set up a constructor for the new class that instantiates the python class and calls its init
     newClass->ClassConstructor = [](const FObjectInitializer& objInitializer)
@@ -197,7 +194,6 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
         // TODO: pyObj->creating = true?
 
         // inject any UPROPERTYs into pyObj.__dict__?
-        // inject any UFUNCTIONs into pyobj.__dict__ too?
     };
 
     // set up the CDO of this class and verify that it will auto trigger a call to python's init
@@ -251,7 +247,7 @@ static PyObject *get_py_proxy(PyObject *self, PyObject *args)
     return pyObj->py_proxy;
 }
 
-// adds a UFUNCTION to a UClass that either calls a Python callable or the superclass UFUNCTION
+// adds a UFUNCTION to a UClass that calls a Python callable
 static PyObject *add_ufunction(PyObject *self, PyObject *args)
 {
     PyObject *pyEngineClass;
@@ -263,11 +259,6 @@ static PyObject *add_ufunction(PyObject *self, PyObject *args)
     UClass *engineClass = ue_py_check_type<UClass>(pyEngineClass);
     if (!engineClass)
         return PyErr_Format(PyExc_Exception, "Provide the UClass to attach the function to");
-
-    // If no Python function is given, it means direct the call to the super call
-    // TODO: remove this, I don't think we use it because it doesn't work :)
-    if (pyFunc == Py_None)
-        engineClass = engineClass->GetSuperClass();
 
     // TODO: compute correct set of function flags
     uint32 funcFlags = FUNC_Native | FUNC_BlueprintCallable | FUNC_Public;
@@ -338,7 +329,7 @@ void fm_init_module()
 {
     //LOG("Initializing module");
 	GAllowActorScriptExecutionInEditor = true; // without this, UFUNCTION calls in the editor often don't work - maybe that's intentional?
-    PyObject *module = PyImport_AddModule("fm");
+    PyObject *module = PyImport_AddModule("_fmsubclassing"); // Scripts/fm/__init__.py imports this
     PyObject *module_dict = PyModule_GetDict(module);
 
     for (PyMethodDef *m = module_methods; m->ml_name != NULL; m++)

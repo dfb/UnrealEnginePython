@@ -129,7 +129,6 @@ static void UEPyClassConstructor(UClass *u_class, const FObjectInitializer &Obje
 	ue_py_class_constructor_placeholder = nullptr;
 }
 
-
 // creates and returns a new UFMPythonClass
 static PyObject *create_subclass(PyObject *self, PyObject *args)
 {
@@ -172,6 +171,12 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
 		// create and bind an instance of the Python class. By convention, the bridge class takes a single param that tells
         // the address of the corresponding UObject
         UObject *engineObj = objInitializer.GetObj();
+        ue_PyUObject *pyObj = ue_get_python_uobject(engineObj);
+        if (!pyObj)
+        {
+            unreal_engine_py_log_error();
+            return;
+        }
         //LOG("ClassConstructor initializing UObject %llX", (unsigned long long)engineObj);
         PyObject *initArgs = Py_BuildValue("(K)", (unsigned long long)engineObj);
         PyObject *pyInst = PyObject_CallObject(fmClass->pyClass, initArgs);
@@ -182,18 +187,8 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
             return;
         }
 
-        ue_PyUObject *pyObj = ue_get_python_uobject(engineObj);
-        if (!pyObj)
-        {
-            unreal_engine_py_log_error();
-            return;
-        }
-
         pyObj->py_proxy = pyInst;
-        // TODO: I think we want pyObj->py_dict and pyInst's dict to be the same
-        // TODO: pyObj->creating = true?
-
-        // inject any UPROPERTYs into pyObj.__dict__?
+        // TODO: I think we want pyObj->py_dict and pyInst's dict to be the same?
     };
 
     // set up the CDO of this class and verify that it will auto trigger a call to python's init
@@ -314,6 +309,142 @@ static PyObject *get_ufunction_object(PyObject *self, PyObject *args)
     Py_RETURN_UOBJECT(engineFunc);
 }
 
+// gets a list of all UPROPERTYs exposed by a UClass and its parents
+static PyObject *get_uproperty_names(PyObject *self, PyObject *args)
+{
+    PyObject *pyEngineClass;
+    if (!PyArg_ParseTuple(args, "O", &pyEngineClass))
+        return NULL;
+
+    UClass *engineClass = ue_py_check_type<UClass>(pyEngineClass);
+    if (!engineClass)
+        return PyErr_Format(PyExc_Exception, "Invalid UClass");
+
+	PyObject *propNames = PyList_New(0);
+    for (TFieldIterator<UProperty> it(engineClass); it; ++it)
+    {
+        UProperty *prop = *it;
+        FString propName = prop->GetFName().ToString();
+		PyList_Append(propNames, PyUnicode_FromString(TCHAR_TO_UTF8(*prop->GetFName().ToString())));
+    }
+
+    return propNames;
+}
+
+// registers a new UProperty with the given UClass. Caller ensures the property does not already
+// exist in this or an ancestor class
+static PyObject *add_uproperty(PyObject *self, PyObject *args)
+{
+    PyObject *pyEngineClass, *pyPropType;
+    char *propName;
+    if (!PyArg_ParseTuple(args, "OsO", &pyEngineClass, &propName, &pyPropType))
+        return NULL;
+
+    UClass *engineClass = ue_py_check_type<UClass>(pyEngineClass);
+    if (!engineClass)
+        return PyErr_Format(PyExc_Exception, "Invalid UClass");
+
+	EObjectFlags propFlags = RF_Public | RF_MarkAsNative; // | RF_ClassDefaultObject;// | RF_Transient;
+
+    // Native types
+    UProperty *newProp = nullptr;
+    if (PyType_Check(pyPropType))
+    {
+        if (pyPropType == (PyObject*)&PyLong_Type)
+            newProp = NewObject<UIntProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+        // TODO: support for bool, byte, float, string
+    }
+    else
+    {
+        // TODO: support for name, text, vector, rotator, transform, scriptstruct, interface, enum, uobject, uclass
+    }
+
+    if (newProp)
+    {   // TODO: check this
+        uint64 flags = CPF_Edit | CPF_BlueprintVisible | CPF_ZeroConstructor;
+        newProp->SetPropertyFlags(flags);
+        newProp->ArrayDim = 1;
+        UStruct *us = (UStruct *)engineClass;
+        us->AddCppProperty(newProp);
+        us->StaticLink(true);
+
+    }
+    else
+    {
+        LOG("WARNING: did not add new property %s", UTF8_TO_TCHAR(propName));
+    }
+
+    //you are here
+    Py_RETURN_NONE;
+}
+
+// used by __setattr__ on a python instance to set a value on a uprop - caller ensures the uprop exists
+static PyObject *set_uproperty_value(PyObject *self, PyObject *args)
+{
+    unsigned long long instAddr;
+    char *propName;
+    PyObject *pyValue;
+    int emitEvents;
+    if (!PyArg_ParseTuple(args, "KsOp", &instAddr, &propName, &pyValue, &emitEvents))
+        return nullptr;
+
+    UObject *engineObj = (UObject *)instAddr;
+    if (!USEFUL(engineObj))
+        return PyErr_Format(PyExc_Exception, "Invalid UObject");
+
+    UProperty *prop = engineObj->GetClass()->FindPropertyByName(FName(UTF8_TO_TCHAR(propName)));
+    if (!prop)
+        return PyErr_Format(PyExc_Exception, "Non-existent property");
+
+#if WITH_EDITOR
+    if (emitEvents)
+        engineObj->PreEditChange(prop);
+#endif
+
+    if (ue_py_convert_pyobject(pyValue, prop, (uint8 *)engineObj, 0))
+    {
+        if (emitEvents)
+        {
+            FPropertyChangedEvent PropertyEvent(prop, EPropertyChangeType::ValueSet);
+            engineObj->PostEditChangeProperty(PropertyEvent);
+        }
+#if WITH_EDITOR
+        // TODO: original had special code for archtype/CDO objects
+#endif
+        Py_RETURN_NONE;
+    }
+
+    // TODO: err if they try to write to a UFunction name
+
+    return PyErr_Format(PyExc_Exception, "invalid value for UProperty");
+}
+
+// used by __getattr__ on a python instance to get a value from a uprop - caller ensures
+// the given name is really a uprop
+static PyObject *get_uproperty_value(PyObject *self, PyObject *args)
+{
+    unsigned long long instAddr;
+    char *propName;
+    if (!PyArg_ParseTuple(args, "Ks", &instAddr, &propName))
+        return nullptr;
+
+    UObject *engineObj = (UObject *)instAddr;
+    if (!USEFUL(engineObj))
+    {
+        LERROR("engineObj not useful");
+        return nullptr;
+    }
+
+    UProperty *prop = engineObj->GetClass()->FindPropertyByName(FName(UTF8_TO_TCHAR(propName)));
+    if (!prop)
+    {
+        LERROR("Non-existent property");
+        return nullptr;
+    }
+
+    return ue_py_convert_property(prop, (uint8 *)engineObj, 0);
+}
+
 static PyMethodDef module_methods[] = {
     {"create_subclass", create_subclass, METH_VARARGS, ""},
     {"call_ufunction_object", call_ufunction_object, METH_VARARGS, ""},
@@ -321,6 +452,10 @@ static PyMethodDef module_methods[] = {
     {"add_ufunction", add_ufunction, METH_VARARGS, ""},
     {"get_ufunction_names", get_ufunction_names, METH_VARARGS, ""},
     {"get_ufunction_object", get_ufunction_object, METH_VARARGS, ""},
+    {"get_uproperty_names", get_uproperty_names, METH_VARARGS, ""},
+    {"add_uproperty", add_uproperty, METH_VARARGS, ""},
+    {"set_uproperty_value", set_uproperty_value, METH_VARARGS, ""},
+    {"get_uproperty_value", get_uproperty_value, METH_VARARGS, ""},
     { NULL, NULL },
 };
 

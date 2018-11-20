@@ -44,15 +44,32 @@ UClass *create_new_uclass(char *name, UClass *parent_class)
     if (is_overwriting && new_object->Children)
     {
         UField *u_field = new_object->Children;
+        UField *prev = nullptr;
+        UField *next = nullptr;
         while (u_field)
         {
+            next = u_field->Next;
             if (u_field->IsA<UFunction>())
             {
                 UE_LOG(LogPython, Warning, TEXT("removing function %s"), *u_field->GetName());
                 new_object->RemoveFunctionFromFunctionMap((UFunction *)u_field);
                 FLinkerLoad::InvalidateExport(u_field);
             }
-            u_field = u_field->Next;
+            else if (u_field->IsA<UProperty>())
+            {
+                UE_LOG(LogPython, Warning, TEXT("removing property %s"), *u_field->GetName());
+
+                // remnove it from the linked list
+                if (prev != nullptr)
+                    prev->Next = next;
+                u_field->Next = nullptr;
+                FLinkerLoad::InvalidateExport(u_field);
+                if (new_object->Children == u_field) // fix up list if it was the first property
+                    new_object->Children = next;
+            }
+
+            prev = u_field;
+            u_field = next;
         }
         new_object->ClearFunctionMapsCaches();
         new_object->PurgeClass(true);
@@ -337,7 +354,8 @@ static PyObject *add_uproperty(PyObject *self, PyObject *args)
 {
     PyObject *pyEngineClass, *pyPropType;
     char *propName;
-    if (!PyArg_ParseTuple(args, "OsO", &pyEngineClass, &propName, &pyPropType))
+    int isClass;
+    if (!PyArg_ParseTuple(args, "OsOp", &pyEngineClass, &propName, &pyPropType, &isClass))
         return NULL;
 
     UClass *engineClass = ue_py_check_type<UClass>(pyEngineClass);
@@ -350,14 +368,83 @@ static PyObject *add_uproperty(PyObject *self, PyObject *args)
     UProperty *newProp = nullptr;
     if (PyType_Check(pyPropType))
     {
-        if (pyPropType == (PyObject*)&PyLong_Type)
+        if (pyPropType == (PyObject *)&PyLong_Type)
             newProp = NewObject<UIntProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
-        // TODO: support for bool, byte, float, string
+        else if (pyPropType == (PyObject *)&PyBool_Type)
+            newProp = NewObject<UBoolProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+        else if (pyPropType == (PyObject *)&PyFloat_Type)
+            newProp = NewObject<UFloatProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+        else if (pyPropType == (PyObject *)&PyUnicode_Type)
+            newProp = NewObject<UStrProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+        else if (pyPropType == (PyObject *)&ue_PyFVectorType)
+        {
+            newProp = NewObject<UStructProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+            ((UStructProperty*)newProp)->Struct = TBaseStructure<FVector>::Get();
+        }
+        else if (pyPropType == (PyObject *)&ue_PyFRotatorType)
+        {
+            newProp = NewObject<UStructProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+            ((UStructProperty*)newProp)->Struct = TBaseStructure<FRotator>::Get();
+        }
+        else if (pyPropType == (PyObject *)&ue_PyFTransformType)
+        {
+            newProp = NewObject<UStructProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+            ((UStructProperty*)newProp)->Struct = TBaseStructure<FTransform>::Get();
+        }
+        else if (pyPropType == (PyObject *)&ue_PyFLinearColorType)
+        {
+            newProp = NewObject<UStructProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+            ((UStructProperty*)newProp)->Struct = TBaseStructure<FLinearColor>::Get();
+        }
+        else if (pyPropType == (PyObject *)&ue_PyFColorType)
+        {
+            newProp = NewObject<UStructProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+            ((UStructProperty*)newProp)->Struct = TBaseStructure<FColor>::Get();
+        }
+        else
+            return PyErr_Format(PyExc_Exception, "Cannot create uprop for %s - unsupported Python type", propName);
+    }
+    else if (ue_is_pyuobject(pyPropType))
+    {
+        UObject *engineObj = ((ue_PyUObject*)pyPropType)->ue_object;
+        if (engineObj->IsA<UClass>())
+        {
+            UClass *uClass = (UClass *)engineObj;
+            if (isClass) //uClass->IsChildOf<UClass>())
+            {
+                UClassProperty *propTemp = NewObject<UClassProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+                propTemp->PropertyClass = UClass::StaticClass();
+                if (uClass == UClass::StaticClass())
+                    propTemp->SetMetaClass(UObject::StaticClass());
+                else
+                    propTemp->SetMetaClass(uClass->GetClass());
+                newProp = propTemp;
+            }
+            else
+            {
+                newProp = NewObject<UObjectProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+                ((UObjectProperty*)newProp)->SetPropertyClass(uClass);
+            }
+
+        }
+        else if (engineObj->IsA<UEnum>())
+        {
+            newProp = NewObject<UEnumProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+            UNumericProperty *underlying = NewObject<UByteProperty>(newProp, TEXT("UnderlyingType"), propFlags);
+            ((UEnumProperty*)newProp)->SetEnum((UEnum*)engineObj);
+            newProp->AddCppProperty(underlying);
+        }
+        else if (engineObj->IsA<UStruct>())
+        {
+            newProp = NewObject<UStructProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+            ((UStructProperty*)newProp)->Struct = (UScriptStruct*)engineObj;
+        }
+        // TODO: support for scriptstruct, obj that implements an interface
+        // TODO (maybe): support for FName, Text
+        // TODO: array, map, set classes
     }
     else
-    {
-        // TODO: support for name, text, vector, rotator, transform, scriptstruct, interface, enum, uobject, uclass
-    }
+        return PyErr_Format(PyExc_Exception, "Cannot create uprop for %s", propName);
 
     if (newProp)
     {   // TODO: check this
@@ -394,7 +481,7 @@ static PyObject *set_uproperty_value(PyObject *self, PyObject *args)
 
     UProperty *prop = engineObj->GetClass()->FindPropertyByName(FName(UTF8_TO_TCHAR(propName)));
     if (!prop)
-        return PyErr_Format(PyExc_Exception, "Non-existent property");
+        return PyErr_Format(PyExc_Exception, "Non-existent property %s", propName);
 
 #if WITH_EDITOR
     if (emitEvents)

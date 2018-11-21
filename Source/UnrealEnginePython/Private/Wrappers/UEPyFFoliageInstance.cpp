@@ -28,12 +28,12 @@ static FFoliageInstance* get_foliage_instance(ue_PyFFoliageInstance *self)
 		return nullptr;
 	}
 
-	FFoliageMeshInfo& info = self->foliage_actor->FoliageMeshes[self->foliage_type.Get()].Get();
+	/*FFoliageMeshInfo& info = self->foliage_actor->FoliageMeshes[self->foliage_type.Get()].Get();
 
 	if (self->instance_id >= 0 && self->instance_id < info.Instances.Num())
 	{
 		return &info.Instances[self->instance_id];
-	}
+	}*/
 
 	PyErr_SetString(PyExc_Exception, "invalid foliage instance id");
 	return nullptr;
@@ -54,7 +54,7 @@ static PyObject *py_ue_ffoliage_instance_get_location(ue_PyFFoliageInstance *sel
 static int py_ue_ffoliage_instance_set_location(ue_PyFFoliageInstance *self, PyObject *value, void *closure)
 {
 	set_instance(self);
-	if (value)
+	/*if (value)
 	{
 		ue_PyFVector *vec = py_ue_is_fvector(value);
 		if (vec)
@@ -67,7 +67,7 @@ static int py_ue_ffoliage_instance_set_location(ue_PyFFoliageInstance *self, PyO
 			info.PostMoveInstances(self->foliage_actor.Get(), instances);
 			return 0;
 		}
-	}
+	}*/
 	PyErr_SetString(PyExc_TypeError, "value is not an FVector");
 	return -1;
 }
@@ -75,7 +75,7 @@ static int py_ue_ffoliage_instance_set_location(ue_PyFFoliageInstance *self, PyO
 static int py_ue_ffoliage_instance_set_rotation(ue_PyFFoliageInstance *self, PyObject *value, void *closure)
 {
 	set_instance(self);
-	if (value)
+	/*if (value)
 	{
 		ue_PyFRotator *rot = py_ue_is_frotator(value);
 		if (rot)
@@ -88,7 +88,7 @@ static int py_ue_ffoliage_instance_set_rotation(ue_PyFFoliageInstance *self, PyO
 			info.PostMoveInstances(self->foliage_actor.Get(), instances);
 			return 0;
 		}
-	}
+	}*/
 	PyErr_SetString(PyExc_TypeError, "value is not an FRotator");
 	return -1;
 }

@@ -16,8 +16,9 @@
 
 // creates a new UClass class inside UE4
 // basically unreal_engine_new_uclass but uses a new class type in UE4
-UClass *create_new_uclass(char *name, UClass *parent_class)
+UClass *create_new_uclass(char *name, UClass *parent_class, PyObject *pyClass)
 {
+    LOG("BEGIN for %s", UTF8_TO_TCHAR(name));
     bool is_overwriting = false;
 
     UObject *outer = GetTransientPackage();
@@ -28,12 +29,14 @@ UClass *create_new_uclass(char *name, UClass *parent_class)
         outer = parent->GetOuter();
     }
 
-    UClass *new_object = FindObject<UClass>(ANY_PACKAGE, UTF8_TO_TCHAR(name));
-    if (!new_object)
+    UClass *newClass = FindObject<UClass>(ANY_PACKAGE, UTF8_TO_TCHAR(name));
+    if (!newClass)
     {
-        new_object = NewObject<UFMPythonClass>(outer, UTF8_TO_TCHAR(name), RF_Public | RF_Transient | RF_MarkAsNative);
-        if (!new_object)
+        newClass = NewObject<UFMPythonClass>(outer, UTF8_TO_TCHAR(name), RF_Public | RF_Transient | RF_MarkAsNative);
+        if (!newClass)
             return nullptr;
+        Py_INCREF(pyClass);
+        ((UFMPythonClass *)newClass)->pyClass = pyClass;
     }
     else
     {
@@ -41,97 +44,81 @@ UClass *create_new_uclass(char *name, UClass *parent_class)
         is_overwriting = true;
     }
 
-    if (is_overwriting && new_object->Children)
+    if (is_overwriting && newClass->Children)
     {
-        UField *u_field = new_object->Children;
-        UField *prev = nullptr;
-        UField *next = nullptr;
+        UField *u_field = newClass->Children;
         while (u_field)
         {
-            next = u_field->Next;
             if (u_field->IsA<UFunction>())
             {
                 UE_LOG(LogPython, Warning, TEXT("removing function %s"), *u_field->GetName());
-                new_object->RemoveFunctionFromFunctionMap((UFunction *)u_field);
+                newClass->RemoveFunctionFromFunctionMap((UFunction *)u_field);
                 FLinkerLoad::InvalidateExport(u_field);
             }
-            else if (u_field->IsA<UProperty>())
-            {
-                UE_LOG(LogPython, Warning, TEXT("removing property %s"), *u_field->GetName());
-
-                // remnove it from the linked list
-                if (prev != nullptr)
-                    prev->Next = next;
-                u_field->Next = nullptr;
-                FLinkerLoad::InvalidateExport(u_field);
-                if (new_object->Children == u_field) // fix up list if it was the first property
-                    new_object->Children = next;
-            }
-
-            prev = u_field;
-            u_field = next;
+            u_field = u_field->Next;
         }
-        new_object->ClearFunctionMapsCaches();
-        new_object->PurgeClass(true);
-        new_object->Children = nullptr;
-        new_object->ClassAddReferencedObjects = parent->ClassAddReferencedObjects;
+        newClass->ClearFunctionMapsCaches();
+        newClass->PurgeClass(true);
+        newClass->Children = nullptr;
+        newClass->ClassAddReferencedObjects = parent->ClassAddReferencedObjects;
     }
 
-    new_object->PropertiesSize = 0;
+    newClass->PropertiesSize = 0;
 
-    new_object->ClassConstructor = parent->ClassConstructor;
-    new_object->SetSuperStruct(parent);
+    newClass->ClassConstructor = parent->ClassConstructor;
+    newClass->SetSuperStruct(parent);
 
-    new_object->PropertyLink = parent->PropertyLink;
-    new_object->ClassWithin = parent->ClassWithin;
-    new_object->ClassConfigName = parent->ClassConfigName;
+    newClass->PropertyLink = parent->PropertyLink;
+    newClass->ClassWithin = parent->ClassWithin;
+    newClass->ClassConfigName = parent->ClassConfigName;
 
-    new_object->ClassFlags |= (parent->ClassFlags & (CLASS_Inherit | CLASS_ScriptInherit));
-    new_object->ClassFlags |= CLASS_Native;
+    newClass->ClassFlags |= (parent->ClassFlags & (CLASS_Inherit | CLASS_ScriptInherit));
+    newClass->ClassFlags |= CLASS_Native;
 
 #if WITH_EDITOR
-    new_object->SetMetaData(FBlueprintMetadata::MD_AllowableBlueprintVariableType, TEXT("true"));
-    if (new_object->IsChildOf<UActorComponent>())
+    newClass->SetMetaData(FBlueprintMetadata::MD_AllowableBlueprintVariableType, TEXT("true"));
+    if (newClass->IsChildOf<UActorComponent>())
     {
-        new_object->SetMetaData(FBlueprintMetadata::MD_BlueprintSpawnableComponent, TEXT("true"));
+        newClass->SetMetaData(FBlueprintMetadata::MD_BlueprintSpawnableComponent, TEXT("true"));
     }
 #endif
 
-    new_object->ClassCastFlags = parent->ClassCastFlags;
+    newClass->ClassCastFlags = parent->ClassCastFlags;
 
 
-    new_object->Bind();
-    new_object->StaticLink(true);
+    newClass->Bind();
+    newClass->StaticLink(true);
 
     // it could be a class update
-    if (is_overwriting && new_object->ClassDefaultObject)
+    if (is_overwriting && newClass->ClassDefaultObject)
     {
-        new_object->GetDefaultObject()->RemoveFromRoot();
-        new_object->GetDefaultObject()->ConditionalBeginDestroy();
-        new_object->ClassDefaultObject = nullptr;
+        newClass->GetDefaultObject()->RemoveFromRoot();
+        newClass->GetDefaultObject()->ConditionalBeginDestroy();
+        newClass->ClassDefaultObject = nullptr;
     }
 
 #if WITH_EDITOR
-    new_object->PostEditChange();
+    newClass->PostEditChange();
 #endif
 
-    new_object->GetDefaultObject()->PostInitProperties();
+    newClass->GetDefaultObject()->PostInitProperties();
 
 #if WITH_EDITOR
-    new_object->PostLinkerChange();
+    newClass->PostLinkerChange();
 #endif
 
-    new_object->AssembleReferenceTokenStream();
+    newClass->AssembleReferenceTokenStream();
 
 #if WITH_EDITOR
     // this is required for avoiding startup crashes #405
     if (GEditor)
     {
-        FBlueprintActionDatabase::Get().RefreshClassActions(new_object);
+        FBlueprintActionDatabase::Get().RefreshClassActions(newClass);
     }
 #endif
 
-    return new_object;
+    LOG("END for %s", UTF8_TO_TCHAR(name));
+    return newClass;
 }
 
 // hack for avoiding loops in class constructors (thanks to the Unreal.js project for the idea)
@@ -162,13 +149,10 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
         return PyErr_Format(PyExc_Exception, "python class must be a class object");
 
     // Create the class in UE4 and store info needed to create Python instances later
-    UFMPythonClass *newClass = (UFMPythonClass *)create_new_uclass(className, parentClass);
+    UFMPythonClass *newClass = (UFMPythonClass *)create_new_uclass(className, parentClass, pyClass);
     if (!newClass)
         return PyErr_Format(PyExc_Exception, "failed to create new UClass");
-    Py_INCREF(pyClass);
-    newClass->pyClass = pyClass;
 
-    // TODO: any uprop the py class is declaring that is not already present in a parent class needs to be added to newClass
     // TODO: add to newClass a UFUNCTION for ReceiveDestroy (I guess?) that decrefs and clears our ref to the py instance we created
 
     // set up a constructor for the new class that instantiates the python class and calls its init
@@ -178,37 +162,57 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
 
         // do some hackery to prevent infinite recursion
         UClass *u_class = ue_py_class_constructor_placeholder ? ue_py_class_constructor_placeholder : objInitializer.GetClass();
+        LOG("BEGIN newClass->ClassConstructor for u_class %s", *u_class->GetName());
         ue_py_class_constructor_placeholder = nullptr;
+        LOG("BEGIN calling UEPyClassConstructor for super class of %s, i.e. %s", *u_class->GetName(), *u_class->GetSuperClass()->GetName());
         UEPyClassConstructor(u_class->GetSuperClass(), objInitializer);
+        LOG("END calling UEPyClassConstructor for super class of %s, i.e. %s", *u_class->GetName(), *u_class->GetSuperClass()->GetName());
 
-        UFMPythonClass *fmClass = Cast<UFMPythonClass>(u_class);
-		if (!fmClass || !fmClass->pyClass)
-			return; // nothing left to do for e.g. CDO
-
-		// create and bind an instance of the Python class. By convention, the bridge class takes a single param that tells
-        // the address of the corresponding UObject
+        // we want to create the Python object only for the actual object we're constructing, but ClassConstructor is called recursively as
+        // we go up the acenstor chain of super classes, so guard against creating a Python object at other times
         UObject *engineObj = objInitializer.GetObj();
-        ue_PyUObject *pyObj = ue_get_python_uobject(engineObj);
-        if (!pyObj)
+        LOG("engineObj is %s", *engineObj->GetName());
+        if (u_class == engineObj->GetClass())
         {
-            unreal_engine_py_log_error();
-            return;
-        }
-        //LOG("ClassConstructor initializing UObject %llX", (unsigned long long)engineObj);
-        PyObject *initArgs = Py_BuildValue("(K)", (unsigned long long)engineObj);
-        PyObject *pyInst = PyObject_CallObject(fmClass->pyClass, initArgs);
-        Py_DECREF(initArgs);
-        if (!pyInst)
-        {
-            LERROR("Failed to instantiate Python class");
-            return;
+            ue_PyUObject *pyObj = ue_get_python_uobject(engineObj);
+            if (!pyObj)
+            {
+                unreal_engine_py_log_error();
+                return;
+            }
+
+            UFMPythonClass *fmClass = Cast<UFMPythonClass>(u_class);
+            if (!fmClass || !fmClass->pyClass)
+            {
+                LOG("EARLYEND newClass->ClassConstructor for u_class %s - no fmClass or no pyClass", *u_class->GetName());
+                return; // TODO: does this ever happen? If so, isn't it an error?
+            }
+
+            // create and bind an instance of the Python class. By convention, the bridge class takes a single param that tells
+            // the address of the corresponding UObject
+            PyObject *initArgs = Py_BuildValue("(K)", (unsigned long long)engineObj);
+            LOG("BEGIN calling Python to create obj for u_class:%s, engineObj:%s engineObjClass:%s", *u_class->GetName(), *engineObj->GetName(), *engineObj->GetClass()->GetName());
+            PyObject *pyInst = PyObject_CallObject(fmClass->pyClass, initArgs);
+            LOG("END calling Python to create obj for u_class:%s, engineObj:%s", *u_class->GetName(), *engineObj->GetName(), *engineObj->GetClass()->GetName());
+            Py_DECREF(initArgs);
+            if (!pyInst)
+            {
+                LERROR("failed to instantiate python class");
+                return;
+            }
+
+            pyObj->py_proxy = pyInst;
         }
 
-        pyObj->py_proxy = pyInst;
         // TODO: I think we want pyObj->py_dict and pyInst's dict to be the same?
+        LOG("END newClass->ClassConstructor for u_class %s", *u_class->GetName());
     };
 
-    // set up the CDO of this class and verify that it will auto trigger a call to python's init
+    // we want to force the CDO to be recreated next time it is accessed, so that the Python code has a chance to add in any uprops
+    newClass->GetDefaultObject()->RemoveFromRoot();
+    newClass->GetDefaultObject()->ConditionalBeginDestroy();
+    newClass->ClassDefaultObject = nullptr;
+
 
     Py_RETURN_UOBJECT(newClass);
 }
@@ -362,7 +366,8 @@ static PyObject *add_uproperty(PyObject *self, PyObject *args)
     if (!engineClass)
         return PyErr_Format(PyExc_Exception, "Invalid UClass");
 
-	EObjectFlags propFlags = RF_Public | RF_MarkAsNative; // | RF_ClassDefaultObject;// | RF_Transient;
+    LOG("ADDING UPROP %s to class %s", UTF8_TO_TCHAR(propName), *engineClass->GetName());
+	EObjectFlags propFlags = RF_Public | RF_MarkAsNative; // | RF_Transient;
 
     // Native types
     UProperty *newProp = nullptr;

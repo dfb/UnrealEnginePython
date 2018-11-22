@@ -222,9 +222,8 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
 static PyObject *call_ufunction_object(PyObject *self, PyObject *args)
 {
     unsigned long long instAddr;
-    PyObject *pyInst;
-    PyObject *pyFuncObj;
-    if (!PyArg_ParseTuple(args, "KOO", &instAddr, &pyInst, &pyFuncObj))
+    PyObject *pyInst, *pyFuncObj, *pyArgs, *pyKWArgs;
+    if (!PyArg_ParseTuple(args, "KOOOO", &instAddr, &pyInst, &pyFuncObj, &pyArgs, &pyKWArgs))
         return NULL;
 
     UObject *engineObj = (UObject *)instAddr;
@@ -238,9 +237,7 @@ static PyObject *call_ufunction_object(PyObject *self, PyObject *args)
     if (!engineFunc)
         return PyErr_Format(PyExc_Exception, "Invalid UFunction object");
 
-    PyObject *pyArgs = PyTuple_New(0);
-    PyObject *ret = py_ue_ufunction_call(engineFunc, engineObj, pyArgs, 0, NULL);
-    Py_DECREF(pyArgs);
+    PyObject *ret = py_ue_ufunction_call(engineFunc, engineObj, pyArgs, 0, pyKWArgs);
     return ret;
 }
 

@@ -19,6 +19,9 @@ public:
     // the Python class this UE4 class binds to
     PyObject *pyClass;
 
+    // true while we're creating this class (including the stuff in Python)
+    bool creating;
+
 private:
 
 	PyObject * py_constructor;

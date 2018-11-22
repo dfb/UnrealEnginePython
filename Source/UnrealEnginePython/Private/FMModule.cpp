@@ -18,7 +18,6 @@
 // basically unreal_engine_new_uclass but uses a new class type in UE4
 UClass *create_new_uclass(char *name, UClass *parent_class, PyObject *pyClass)
 {
-    LOG("BEGIN for %s", UTF8_TO_TCHAR(name));
     bool is_overwriting = false;
 
     UObject *outer = GetTransientPackage();
@@ -40,7 +39,7 @@ UClass *create_new_uclass(char *name, UClass *parent_class, PyObject *pyClass)
     }
     else
     {
-        UE_LOG(LogPython, Warning, TEXT("Preparing for overwriting class %s ..."), UTF8_TO_TCHAR(name));
+        //UE_LOG(LogPython, Warning, TEXT("Preparing for overwriting class %s ..."), UTF8_TO_TCHAR(name));
         is_overwriting = true;
     }
     ((UFMPythonClass *)newClass)->creating = true; // this will be cleared later by the caller
@@ -52,7 +51,6 @@ UClass *create_new_uclass(char *name, UClass *parent_class, PyObject *pyClass)
         {
             if (u_field->IsA<UFunction>())
             {
-                UE_LOG(LogPython, Warning, TEXT("removing function %s"), *u_field->GetName());
                 newClass->RemoveFunctionFromFunctionMap((UFunction *)u_field);
                 FLinkerLoad::InvalidateExport(u_field);
             }
@@ -118,7 +116,6 @@ UClass *create_new_uclass(char *name, UClass *parent_class, PyObject *pyClass)
     }
 #endif
 
-    LOG("END for %s", UTF8_TO_TCHAR(name));
     return newClass;
 }
 
@@ -163,16 +160,12 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
 
         // do some hackery to prevent infinite recursion
         UClass *u_class = ue_py_class_constructor_placeholder ? ue_py_class_constructor_placeholder : objInitializer.GetClass();
-        LOG("BEGIN newClass->ClassConstructor for u_class %s", *u_class->GetName());
         ue_py_class_constructor_placeholder = nullptr;
-        LOG("BEGIN calling UEPyClassConstructor for super class of %s, i.e. %s", *u_class->GetName(), *u_class->GetSuperClass()->GetName());
         UEPyClassConstructor(u_class->GetSuperClass(), objInitializer);
-        LOG("END calling UEPyClassConstructor for super class of %s, i.e. %s", *u_class->GetName(), *u_class->GetSuperClass()->GetName());
 
         // we want to create the Python object only for the actual object we're constructing, but ClassConstructor is called recursively as
         // we go up the acenstor chain of super classes, so guard against creating a Python object at other times
         UObject *engineObj = objInitializer.GetObj();
-        LOG("engineObj is %s", *engineObj->GetName());
         if (u_class == engineObj->GetClass())
         {
             ue_PyUObject *pyObj = ue_get_python_uobject(engineObj);
@@ -194,28 +187,14 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
             // it isn't fully formed (doesn't have its uprops yet), so below we manually kill it so that on a subsequent use it will
             // be recreated. Anyway, even though we can't prevent the CDO from being created here, we do want to prevent creation of
             // a corresponding Python instance here, just because it will trigger an error in the logs.
-            if (!PyObject_HasAttrString(fmClass->pyClass, "_creating"))
-            {
-                LERROR("pyClass._creating doesn't exist, grr");
-                return;
-            }
-            PyObject *pyCreating = PyObject_GetAttrString(fmClass->pyClass, "_creating");
-            long creating = PyLong_AsLong(pyCreating);
-            LOG("class._creating is %d", creating);
-            Py_DECREF(pyCreating);
             if (fmClass->creating)
-            {
-                LOG("Skipping calling into Python because class %s is still being created", *u_class->GetName());
                 pyObj->py_proxy = nullptr;
-            }
             else
             {
                 // create and bind an instance of the Python class. By convention, the bridge class takes a single param that tells
                 // the address of the corresponding UObject
                 PyObject *initArgs = Py_BuildValue("(K)", (unsigned long long)engineObj);
-                LOG("BEGIN calling Python to create obj for u_class:%s, engineObj:%s engineObjClass:%s", *u_class->GetName(), *engineObj->GetName(), *engineObj->GetClass()->GetName());
                 PyObject *pyInst = PyObject_CallObject(fmClass->pyClass, initArgs);
-                LOG("END calling Python to create obj for u_class:%s, engineObj:%s", *u_class->GetName(), *engineObj->GetName(), *engineObj->GetClass()->GetName());
                 Py_DECREF(initArgs);
                 if (!pyInst)
                 {
@@ -228,7 +207,6 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
         }
 
         // TODO: I think we want pyObj->py_dict and pyInst's dict to be the same?
-        LOG("END newClass->ClassConstructor for u_class %s", *u_class->GetName());
     };
 
     // we want to force the CDO to be recreated next time it is accessed, so that the Python code has a chance to add in any uprops
@@ -250,7 +228,6 @@ static PyObject *call_ufunction_object(PyObject *self, PyObject *args)
         return NULL;
 
     UObject *engineObj = (UObject *)instAddr;
-    //LOG("CALL UFUNCTION on UObject %llX", instAddr);
     if (!USEFUL(engineObj))
     {
         LERROR("engineObj not useful");
@@ -327,7 +304,6 @@ static PyObject *get_ufunction_names(PyObject *self, PyObject *args)
     {
         UFunction* func = *it;
         FString funcName = func->GetFName().ToString();
-        //LOG("PARENT CLASS HAS: %s", *func->GetFName().ToString());
 		PyList_Append(funcNames, PyUnicode_FromString(TCHAR_TO_UTF8(*func->GetFName().ToString())));
     }
 
@@ -389,7 +365,6 @@ static PyObject *add_uproperty(PyObject *self, PyObject *args)
     if (!engineClass)
         return PyErr_Format(PyExc_Exception, "Invalid UClass");
 
-    LOG("ADDING UPROP %s to class %s", UTF8_TO_TCHAR(propName), *engineClass->GetName());
 	EObjectFlags propFlags = RF_Public | RF_MarkAsNative; // | RF_Transient;
 
     // Native types
@@ -486,7 +461,7 @@ static PyObject *add_uproperty(PyObject *self, PyObject *args)
     }
     else
     {
-        LOG("WARNING: did not add new property %s", UTF8_TO_TCHAR(propName));
+        LWARN("WARNING: did not add new property %s", UTF8_TO_TCHAR(propName));
     }
 
     //you are here

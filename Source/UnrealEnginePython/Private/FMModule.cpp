@@ -413,14 +413,11 @@ static PyObject *add_uproperty(PyObject *self, PyObject *args)
         if (engineObj->IsA<UClass>())
         {
             UClass *uClass = (UClass *)engineObj;
-            if (isClass) //uClass->IsChildOf<UClass>())
+            if (isClass)
             {
                 UClassProperty *propTemp = NewObject<UClassProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+                propTemp->SetMetaClass(uClass);
                 propTemp->PropertyClass = UClass::StaticClass();
-                if (uClass == UClass::StaticClass())
-                    propTemp->SetMetaClass(UObject::StaticClass());
-                else
-                    propTemp->SetMetaClass(uClass->GetClass());
                 newProp = propTemp;
             }
             else

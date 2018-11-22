@@ -55,7 +55,7 @@ if 1:
     class T2(bridge.CChild):
         @ufunction
         def MyFunc(self, e:EControllerHand):
-            log('e:', e)
+            log('e:', e, e == EControllerHand.Right)
 
     log('a')
     c = Spawn(T2)

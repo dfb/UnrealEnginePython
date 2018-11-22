@@ -43,6 +43,7 @@ UClass *create_new_uclass(char *name, UClass *parent_class, PyObject *pyClass)
         UE_LOG(LogPython, Warning, TEXT("Preparing for overwriting class %s ..."), UTF8_TO_TCHAR(name));
         is_overwriting = true;
     }
+    ((UFMPythonClass *)newClass)->creating = true; // this will be cleared later by the caller
 
     if (is_overwriting && newClass->Children)
     {
@@ -188,20 +189,42 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
                 return; // TODO: does this ever happen? If so, isn't it an error?
             }
 
-            // create and bind an instance of the Python class. By convention, the bridge class takes a single param that tells
-            // the address of the corresponding UObject
-            PyObject *initArgs = Py_BuildValue("(K)", (unsigned long long)engineObj);
-            LOG("BEGIN calling Python to create obj for u_class:%s, engineObj:%s engineObjClass:%s", *u_class->GetName(), *engineObj->GetName(), *engineObj->GetClass()->GetName());
-            PyObject *pyInst = PyObject_CallObject(fmClass->pyClass, initArgs);
-            LOG("END calling Python to create obj for u_class:%s, engineObj:%s", *u_class->GetName(), *engineObj->GetName(), *engineObj->GetClass()->GetName());
-            Py_DECREF(initArgs);
-            if (!pyInst)
+            // We don't want to create the CDO until after the Python metaclass has fully created the new class (Metabase.__new__ has
+            // finished running). Because of the way object initialization in UE4 works, however, the CDO does get created here, but
+            // it isn't fully formed (doesn't have its uprops yet), so below we manually kill it so that on a subsequent use it will
+            // be recreated. Anyway, even though we can't prevent the CDO from being created here, we do want to prevent creation of
+            // a corresponding Python instance here, just because it will trigger an error in the logs.
+            if (!PyObject_HasAttrString(fmClass->pyClass, "_creating"))
             {
-                LERROR("failed to instantiate python class");
+                LERROR("pyClass._creating doesn't exist, grr");
                 return;
             }
-
-            pyObj->py_proxy = pyInst;
+            PyObject *pyCreating = PyObject_GetAttrString(fmClass->pyClass, "_creating");
+            long creating = PyLong_AsLong(pyCreating);
+            LOG("class._creating is %d", creating);
+            Py_DECREF(pyCreating);
+            if (fmClass->creating)
+            {
+                LOG("Skipping calling into Python because class %s is still being created", *u_class->GetName());
+                pyObj->py_proxy = nullptr;
+            }
+            else
+            {
+                // create and bind an instance of the Python class. By convention, the bridge class takes a single param that tells
+                // the address of the corresponding UObject
+                PyObject *initArgs = Py_BuildValue("(K)", (unsigned long long)engineObj);
+                LOG("BEGIN calling Python to create obj for u_class:%s, engineObj:%s engineObjClass:%s", *u_class->GetName(), *engineObj->GetName(), *engineObj->GetClass()->GetName());
+                PyObject *pyInst = PyObject_CallObject(fmClass->pyClass, initArgs);
+                LOG("END calling Python to create obj for u_class:%s, engineObj:%s", *u_class->GetName(), *engineObj->GetName(), *engineObj->GetClass()->GetName());
+                Py_DECREF(initArgs);
+                if (!pyInst)
+                {
+                    LERROR("failed to instantiate python class");
+                    PyErr_Format(PyExc_Exception, "Failed to instantiate python clsas");
+                    return;
+                }
+                pyObj->py_proxy = pyInst;
+            }
         }
 
         // TODO: I think we want pyObj->py_dict and pyInst's dict to be the same?
@@ -212,7 +235,7 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
     newClass->GetDefaultObject()->RemoveFromRoot();
     newClass->GetDefaultObject()->ConditionalBeginDestroy();
     newClass->ClassDefaultObject = nullptr;
-
+    ((UFMPythonClass*)newClass)->creating = false;
 
     Py_RETURN_UOBJECT(newClass);
 }

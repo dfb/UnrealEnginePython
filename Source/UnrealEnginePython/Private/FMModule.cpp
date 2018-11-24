@@ -458,7 +458,6 @@ static PyObject *add_uproperty(PyObject *self, PyObject *args)
         LWARN("WARNING: did not add new property %s", UTF8_TO_TCHAR(propName));
     }
 
-    //you are here
     Py_RETURN_NONE;
 }
 
@@ -529,6 +528,36 @@ static PyObject *get_uproperty_value(PyObject *self, PyObject *args)
     return ue_py_convert_property(prop, (uint8 *)engineObj, 0);
 }
 
+// marks this class as implementing the given interface. Caller ensures that this is the truth.
+static PyObject *add_interface(PyObject *self, PyObject *args)
+{
+    PyObject *pyEngineClass, *pyInterfaceClass;
+    if (!PyArg_ParseTuple(args, "OO", &pyEngineClass, &pyInterfaceClass))
+        return nullptr;
+
+    UClass *engineClass = ue_py_check_type<UClass>(pyEngineClass);
+    if (!engineClass)
+        return PyErr_Format(PyExc_Exception, "Invalid UClass to implement the interface");
+
+    UClass *interfaceClass = ue_py_check_type<UClass>(pyInterfaceClass);
+    if (!interfaceClass)
+        return PyErr_Format(PyExc_Exception, "Invalid interface UClass");
+
+    if (!interfaceClass->HasAnyClassFlags(CLASS_Interface))
+    {
+        PyErr_Format(PyExc_Exception, "interfaces must be interface classes");
+        return nullptr;
+    }
+
+    FImplementedInterface info;
+    info.Class = interfaceClass;
+    info.PointerOffset = 0;
+    info.bImplementedByK2 = false;
+    engineClass->Interfaces.Emplace(info);
+
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef module_methods[] = {
     {"create_subclass", create_subclass, METH_VARARGS, ""},
     {"call_ufunction_object", call_ufunction_object, METH_VARARGS, ""},
@@ -540,6 +569,7 @@ static PyMethodDef module_methods[] = {
     {"add_uproperty", add_uproperty, METH_VARARGS, ""},
     {"set_uproperty_value", set_uproperty_value, METH_VARARGS, ""},
     {"get_uproperty_value", get_uproperty_value, METH_VARARGS, ""},
+    {"add_interface", add_interface, METH_VARARGS, ""},
     { NULL, NULL },
 };
 

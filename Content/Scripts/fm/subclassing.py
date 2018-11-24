@@ -8,25 +8,6 @@ The general starting point and goals we use for subclassing are:
 - as much as possible, Python subclasses should be first-class citizens in UE4 - they should be usable anywhere that Blueprint
     classes and objects are usable
 - at the same time, Python subclasses and objects from them should be as Pythonic as possible
-
-Subclassing quickstart:
-    from fm.subclassing import bridge
-    class MyActor(bridge.Actor): # or some other UE4 (C++ or BP) class
-        @ufunction
-        def ReceiveBeginPlay(self): # implement the ReceiveBeginPlay UFUNCTION inherited from AActor
-            pass
-
-        def Whatever(self): # this is not available to the rest of UE4 since it's not exposed as a UFUNCTION
-            pass
-
-        @ufunction
-        def SomeFunc(self): # callable by others since it's exposed as a UFUNCTION
-            pass
-
-Now in UE4 there exists a class called MyActor that is a subclass of the builtin Actor class. As long as you load the above on
-startup (so that it does actually exist), then you can create instances, use it from BP, call its methods from BP, etc.
-
-Note that the parent class used above (Actor) wasn't imported from unreal_engine.classes - this is important!
 '''
 from . common import *
 import _fmsubclassing as fms
@@ -41,7 +22,6 @@ def ufunction(f):
 
 # used for declaring UPROPERTYs. Use when creating class vars: myVar = uproperty(FVector, FVector(1,2,3)). By default, implies BlueprintReadWrite.
 # TODO: add support for replication, editanywhere, BPReadOnly, repnotify, and other flags. myVar = uproperty(default, *kwFlags)
-# TODO: how to distinguish between UClass and UObject properties? (maybe default to UObject and add a class_ref=True flag?)
 class uproperty:
     def __init__(self, type, default, is_class=False): # TODO: make default optional, but find a suitable default (e.g. int=0, bool=False, etc. Or, let them give a default and we infer the type in many cases
         self.type = type
@@ -57,6 +37,12 @@ class MetaBase(type):
             if isinstance(v, uproperty):
                 dct.pop(k)
                 uprops.append((k,v))
+
+        interfaces = []
+        for cls in dct.pop('interfaces', []):
+            assert isinstance(cls, UObject), '%r cannot be used as an interface class' % cls
+            assert cls.class_get_flags() & ue.CLASS_INTERFACE, '%r is not an interface class' % cls
+            interfaces.append(cls)
 
         newPyClass = super().__new__(metaclass, name, bases, dct)
 
@@ -87,6 +73,10 @@ class MetaBase(type):
             else:
                 metaclass.ProcessBridgeDescendentClassMethods(newPyClass)
 
+            # add in any interfaces this class claims to support (TODO: verify that all necessary methods are implemented)
+            for cls in interfaces:
+                fms.add_interface(newPyClass.engineClass, cls)
+
         return newPyClass
 
     @classmethod
@@ -107,7 +97,6 @@ class MetaBase(type):
                 # This is not a known property, so we need to register it with the UCclass
                 newPyClass.__property_names__.append(k)
                 fms.add_uproperty(newPyClass.engineClass, k, v.type, v.is_class)
-                # bool, byte, int, float, name, string, text, vector, rotator, transform, ustruct (scriptstruct), interface, uobject, uclass, enum
 
         newPyClass.__property_defaults__ = initialValues
 

@@ -6,6 +6,7 @@ Commonly used stuffs
 
 import traceback, time, os, sys, json
 import unreal_engine as ue
+from unreal_engine import UObject, FVector, FRotator, FTransform
 
 class Bag(dict):
     def __setattr__(self, k, v): self[k] = v
@@ -39,8 +40,8 @@ def ModusUserDir():
     return os.path.join(os.path.abspath(os.path.expanduser('~')), 'Documents', 'Modus VR')
 
 # Convenience flags for detecting if we're in dev or in a shipping game
-IN_EDITOR = hasattr(ue, 'get_editor_world') # True when we're in the editor (not running)
-IN_GAME = not IN_EDITOR # True when we're running in PIE or in a packaged game
+IN_EDITOR = hasattr(ue, 'get_editor_world') # True when we're in the editor (*including* PIE!!!)
+IN_GAME = not IN_EDITOR # True when we're running in a packaged game
 
 # During packaging/cooking, the build will fail with strange errors as it tries to load these modules, so
 # prj.py sets a flag for us to let us know that the build is going on
@@ -54,18 +55,14 @@ except ImportError:
         NONE, Game, Editor, PIE, EditorPreview, GamePreview, Inactive = range(7)
 
 def GetWorld():
-    '''Returns the best guess of the current world to use: editor world if in the editor, first PIE world found
-    if any, else first game world found or None if somehow no world can be found.'''
-    if IN_EDITOR:
-        return ue.get_editor_world()
-    gameWorld = None
+    '''Returns the best guess of what the "current" world to use is'''
+    worlds = {} # worldType -> *first* world of that type
     for w in ue.all_worlds():
         t = w.get_world_type()
-        if t == EWorldType.PIE:
-            return w
-        if gameWorld is None and t == EWorldType.Game:
-            gameWorld = w
-    return gameWorld
+        if worlds.get(t) is None:
+            worlds[t] = w
+
+    return worlds.get(EWorldType.Game) or worlds.get(EWorldType.PIE) or worlds.get(EWorldType.Editor)
 
 def Spawn(cls, world=None):
     '''General purpose spawn function - spawns an actor and returns it. If no world is provided, finds one
@@ -83,5 +80,6 @@ def Spawn(cls, world=None):
         engineClass = getattr(cls, 'engineClass', None)
         if engineClass is not None:
             cls = engineClass
-    return ue.get_editor_world().actor_spawn(cls)
+    return world.actor_spawn(cls)
+
 

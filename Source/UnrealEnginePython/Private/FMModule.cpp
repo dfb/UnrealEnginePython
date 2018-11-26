@@ -34,14 +34,18 @@ UClass *create_new_uclass(char *name, UClass *parent_class, PyObject *pyClass)
         newClass = NewObject<UFMPythonClass>(outer, UTF8_TO_TCHAR(name), RF_Public | RF_Transient | RF_MarkAsNative);
         if (!newClass)
             return nullptr;
-        Py_INCREF(pyClass);
-        ((UFMPythonClass *)newClass)->pyClass = pyClass;
     }
     else
     {
         //UE_LOG(LogPython, Warning, TEXT("Preparing for overwriting class %s ..."), UTF8_TO_TCHAR(name));
         is_overwriting = true;
+        PyObject *oldPyClass = ((UFMPythonClass *)newClass)->pyClass;
+        if (oldPyClass)
+            Py_DECREF(oldPyClass);
     }
+
+    Py_INCREF(pyClass);
+    ((UFMPythonClass *)newClass)->pyClass = pyClass;
     ((UFMPythonClass *)newClass)->creating = true; // this will be cleared later by the caller
 
     if (is_overwriting && newClass->Children)
@@ -202,7 +206,7 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
                     PyErr_Format(PyExc_Exception, "Failed to instantiate python clsas");
                     return;
                 }
-                pyObj->py_proxy = pyInst;
+                pyObj->py_proxy = pyInst; // pyInst's ref is now owned by py_proxy. TODO: who decref's this later?
             }
         }
 
@@ -215,7 +219,7 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
     newClass->ClassDefaultObject = nullptr;
     ((UFMPythonClass*)newClass)->creating = false;
 
-    Py_RETURN_UOBJECT(newClass);
+    Py_RETURN_UOBJECT(newClass); // TODO: should this be Py_RETURN_UOBJECTNOINC instead?
 }
 
 // given a UFunction and a UObject instance, calls that function on that instance

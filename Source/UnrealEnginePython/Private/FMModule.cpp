@@ -1,4 +1,5 @@
 #include "UnrealEnginePython.h"
+#include "GameFramework/Actor.h"
 #include "PythonFunction.h"
 #include "UEPyModule.h"
 #include "FMPythonClass.h"
@@ -512,12 +513,12 @@ static PyObject *set_uproperty_value(PyObject *self, PyObject *args)
 
     if (ue_py_convert_pyobject(pyValue, prop, (uint8 *)engineObj, 0))
     {
+#if WITH_EDITOR
         if (emitEvents)
         {
             FPropertyChangedEvent PropertyEvent(prop, EPropertyChangeType::ValueSet);
             engineObj->PostEditChangeProperty(PropertyEvent);
         }
-#if WITH_EDITOR
         // TODO: original had special code for archtype/CDO objects
 #endif
         Py_RETURN_NONE;

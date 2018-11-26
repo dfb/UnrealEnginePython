@@ -51,12 +51,12 @@ class MetaBase(type):
         #       (eh, I think we should raise an error if it's present)
         dct['get_py_proxy'] = lambda self:fms.get_py_proxy(self)
 
-        if name == 'BridgeBase':
+        if name.endswith('BridgeBase'):
             pass # No extra processing for this case
         else:
             assert len(bases) > 0, 'This class must subclass something else'
             assert issubclass(newPyClass, BridgeBase), 'MetaBase is only for use with subclassing BridgeBase'
-            isBridge = bases[0] == BridgeBase # is this a bridge class or some further descendent?
+            isBridge = issubclass(bases[0], BridgeBase) # is this a bridge class or some further descendent?
             if isBridge:
                 engineParentClass = getattr(newPyClass, '__uclass__', None)
                 assert engineParentClass is not None, 'Missing __uclass__ property'
@@ -147,7 +147,7 @@ class MetaBase(type):
         _.__name__ = funcName
         setattr(newPyClass, funcName, _)
 
-class BridgeBase(metaclass=MetaBase):
+class BridgeBase: #(metaclass=MetaBase):
     '''Base class of all bridge classes we generate'''
     def __new__(cls, instAddr, *args, **kwargs): # same convention as with __init__
         inst = super(BridgeBase, cls).__new__(cls)
@@ -157,7 +157,7 @@ class BridgeBase(metaclass=MetaBase):
             try:
                 fms.set_uproperty_value(instAddr, propName, default, False)
             except:
-                logTB() # TODO: this happens on every other reload of the class - figure out why
+                logTB()
         return inst
 
     def __init__(self, instAddr):
@@ -182,8 +182,10 @@ class BridgeBase(metaclass=MetaBase):
 
 class BridgeClassGenerator:
     '''Dynamically creates the bridge class for any UE4 class'''
-    def __init__(self):
+    def __init__(self, metaclass, bases):
         self.cache = {} # class name --> class instance
+        self.newClassMetaclass = metaclass
+        self.newClassBases = bases[:]
 
     def __getattr__(self, className):
         try:
@@ -194,14 +196,15 @@ class BridgeClassGenerator:
             engineClass = getattr(engine_classes, className) # let this raise an error if the class doesn't exist
 
             #from unreal_engine.classes import 
-            bases = (BridgeBase,)
+            bases = self.newClassBases[:]
             dct = dict(
                 __uclass__ = engineClass
             )
-            cls = MetaBase.__new__(MetaBase, className+'_Bridge', bases, dct)
+            meta = self.newClassMetaclass
+            cls = meta.__new__(meta, className+'_Bridge', bases, dct)
             self.cache[className] = cls
             return cls
 
 # TODO: make this implicit - i.e. let subclasses pass in an unreal_engine.classes class obj and have metaclass wrap them automatically
-bridge = BridgeClassGenerator()
+bridge = BridgeClassGenerator(MetaBase, (BridgeBase,))
 

@@ -264,6 +264,21 @@ static PyObject *get_py_proxy(PyObject *self, PyObject *args)
     return pyObj->py_proxy;
 }
 
+// given self.instAddr, returns it wrapped in a ue_PyUObject. Note that hanging
+// onto the returned object will probably keep this UE4 object alive, which is why
+// we don't store self.uobject on the Python side.
+static PyObject *get_ue_inst(PyObject *self, PyObject *args)
+{
+    unsigned long long instAddr;
+    if (!PyArg_ParseTuple(args, "K", &instAddr))
+        return NULL;
+
+    UObject *engineObj = (UObject *)instAddr;
+    if (!USEFUL(engineObj))
+        return PyErr_Format(PyExc_Exception, "Invalid UObject");
+	Py_RETURN_UOBJECT(engineObj);
+}
+
 // adds a UFUNCTION to a UClass that calls a Python callable
 static PyObject *add_ufunction(PyObject *self, PyObject *args)
 {
@@ -483,6 +498,13 @@ static PyObject *set_uproperty_value(PyObject *self, PyObject *args)
     if (!prop)
         return PyErr_Format(PyExc_Exception, "Non-existent property %s", propName);
 
+    if (emitEvents)
+    {
+        AActor *actor = Cast<AActor>(engineObj);
+        if (actor)
+            emitEvents = !actor->IsRunningUserConstructionScript();
+    }
+
 #if WITH_EDITOR
     if (emitEvents)
         engineObj->PreEditChange(prop);
@@ -566,6 +588,7 @@ static PyMethodDef module_methods[] = {
     {"create_subclass", create_subclass, METH_VARARGS, ""},
     {"call_ufunction_object", call_ufunction_object, METH_VARARGS, ""},
     {"get_py_proxy", get_py_proxy, METH_VARARGS, ""},
+    {"get_ue_inst", get_ue_inst, METH_VARARGS, ""},
     {"add_ufunction", add_ufunction, METH_VARARGS, ""},
     {"get_ufunction_names", get_ufunction_names, METH_VARARGS, ""},
     {"get_ufunction_object", get_ufunction_object, METH_VARARGS, ""},

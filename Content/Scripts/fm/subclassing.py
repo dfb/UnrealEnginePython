@@ -163,6 +163,11 @@ class BridgeBase(metaclass=MetaBase):
     def __init__(self, instAddr):
         self.instAddr = instAddr # by convention, the UObject addr is passed to the instance
 
+    @property
+    def uobject(self):
+        '''gets the UObject that owns self, wrapped as a python object so it can be passed to other APIs'''
+        return fms.get_ue_inst(self.instAddr)
+
     def __setattr__(self, k, v):
         if k in self.__class__.__property_names__:
             fms.set_uproperty_value(self.instAddr, k, v, True)
@@ -179,6 +184,7 @@ class BridgeClassGenerator:
     '''Dynamically creates the bridge class for any UE4 class'''
     def __init__(self):
         self.cache = {} # class name --> class instance
+
     def __getattr__(self, className):
         try:
             # return cached copy if we've already generated it previously

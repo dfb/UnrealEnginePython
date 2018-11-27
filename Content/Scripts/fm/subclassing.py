@@ -28,6 +28,16 @@ class uproperty:
         self.default = default
         self.is_class = is_class # i.e. the property holds a UClass not a UObject
 
+def CombinedPropertyDefaults(cls):
+    '''Recursively collects all uproperty defaults for this and all parent python classes'''
+    props = {}
+    for baseClass in cls.__bases__[::-1]: # go farthest back first
+        props.update(CombinedPropertyDefaults(baseClass))
+
+    # Now fold in our defaults
+    props.update(getattr(cls, '__property_defaults__', {}))
+    return props
+
 class MetaBase(type):
     '''Metaclass used to help in the creation of Python subclasses of engine classes'''
     def __new__(metaclass, name, bases, dct):
@@ -152,8 +162,9 @@ class BridgeBase: #(metaclass=MetaBase): - let the metaclass be specified dynami
     def __new__(cls, instAddr, *args, **kwargs): # same convention as with __init__
         inst = super(BridgeBase, cls).__new__(cls)
 
-        # Set any default property values
-        for propName, default in cls.__property_defaults__.items():
+        # Set any default property values - we gather the defaults up from parent classes too, although it seems like those
+        # should happen automatically via the CDO, no?
+        for propName, default in CombinedPropertyDefaults(cls).items():
             try:
                 fms.set_uproperty_value(instAddr, propName, default, False)
             except:

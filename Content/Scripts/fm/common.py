@@ -40,8 +40,8 @@ def ModusUserDir():
     return os.path.join(os.path.abspath(os.path.expanduser('~')), 'Documents', 'Modus VR')
 
 # Convenience flags for detecting if we're in dev or in a shipping game
-IN_EDITOR = hasattr(ue, 'get_editor_world') # True when we're in the editor (*including* PIE!!!)
-IN_GAME = not IN_EDITOR # True when we're running in a packaged game
+IN_DEV = hasattr(ue, 'get_editor_world') # True when we're in the editor (*including* PIE!!!)
+IN_GAME = not IN_DEV # True when we're running in a packaged game
 
 # During packaging/cooking, the build will fail with strange errors as it tries to load these modules, so
 # prj.py sets a flag for us to let us know that the build is going on

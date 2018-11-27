@@ -26,7 +26,7 @@ UClass *create_new_uclass(char *name, UClass *parent_class, PyObject *pyClass)
     if (parent_class)
     {
         parent = parent_class;
-        //outer = parent->GetOuter();
+        outer = parent->GetOuter();
     }
 
     UClass *newClass = FindObject<UClass>(ANY_PACKAGE, UTF8_TO_TCHAR(name));

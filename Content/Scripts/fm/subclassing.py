@@ -199,7 +199,7 @@ class BridgeClassGenerator:
                 __uclass__ = engineClass
             )
             meta = self.newClassMetaclass
-            cls = meta.__new__(meta, className+'_Bridge', (BridgeBase,), dct)
+            cls = meta.__new__(meta, className+'___Bridge', (BridgeBase,), dct)
             self.cache[className] = cls
             return cls
 

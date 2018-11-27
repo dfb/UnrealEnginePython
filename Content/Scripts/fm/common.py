@@ -64,12 +64,14 @@ def GetWorld():
 
     return worlds.get(EWorldType.Game) or worlds.get(EWorldType.PIE) or worlds.get(EWorldType.Editor)
 
-def Spawn(cls, world=None):
+def Spawn(cls, world=None, select=False):
     '''General purpose spawn function - spawns an actor and returns it. If no world is provided, finds one
     using GetWorld. cls can be:
     - the name of the class as a string, in which case it will be imported from unreal_engine.classes
     - a class previously imported from unreal_engine.classes
     - a Python class created via the fm.subclassing module
+    If the current world is the editor world and select=True, then the newly spawned actor will be
+    selected before returning.
     '''
     world = world or GetWorld()
     if isinstance(cls, str):
@@ -80,6 +82,15 @@ def Spawn(cls, world=None):
         engineClass = getattr(cls, 'engineClass', None)
         if engineClass is not None:
             cls = engineClass
-    return world.actor_spawn(cls)
+
+    if select and IN_DEV:
+        ue.editor_deselect_actors()
+
+    newObj = world.actor_spawn(cls)
+
+    if select and IN_DEV:
+        ue.editor_select_actor(newObj)
+
+    return newObj
 
 

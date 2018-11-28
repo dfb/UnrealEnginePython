@@ -605,7 +605,7 @@ static PyMethodDef module_methods[] = {
 void fm_init_module()
 {
     //LOG("Initializing module");
-	GAllowActorScriptExecutionInEditor = true; // without this, UFUNCTION calls in the editor often don't work - maybe that's intentional?
+	//GAllowActorScriptExecutionInEditor = true; // without this, UFUNCTION calls in the editor often don't work - maybe that's intentional?
     PyObject *module = PyImport_AddModule("_fmsubclassing"); // Scripts/fm/__init__.py imports this
     PyObject *module_dict = PyModule_GetDict(module);
 

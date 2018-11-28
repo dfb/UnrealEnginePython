@@ -86,7 +86,13 @@ def Spawn(cls, world=None, select=False):
     if select and IN_DEV:
         ue.editor_deselect_actors()
 
-    newObj = world.actor_spawn(cls)
+    try:
+        if IN_DEV:
+            ue.allow_actor_script_execution_in_editor(True)
+        newObj = world.actor_spawn(cls)
+    finally:
+        if IN_DEV:
+            ue.allow_actor_script_execution_in_editor(False)
 
     if select and IN_DEV:
         ue.editor_select_actor(newObj)

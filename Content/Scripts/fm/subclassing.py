@@ -189,7 +189,10 @@ class BridgeBase: #(metaclass=MetaBase): - let the metaclass be specified dynami
         if k in self.__class__.__property_names__:
             return fms.get_uproperty_value(self.instAddr, k)
         else:
-            return super().__getattr__(self, k)
+            try:
+                return super().__getattr__(self, k)
+            except AttributeError:
+                raise AttributeError('No such attribute %r' % k)
 
 class BridgeClassGenerator:
     '''Dynamically creates the bridge class for any UE4 class'''

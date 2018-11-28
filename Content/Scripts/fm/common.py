@@ -39,9 +39,15 @@ def ModusUserDir():
     '''Returns the full path to the user's Modus VR directory under ~/Documents'''
     return os.path.join(os.path.abspath(os.path.expanduser('~')), 'Documents', 'Modus VR')
 
-# Convenience flags for detecting if we're in dev or in a shipping game
-IN_DEV = hasattr(ue, 'get_editor_world') # True when we're in the editor (*including* PIE!!!)
-IN_GAME = not IN_DEV # True when we're running in a packaged game
+# ENGINE_MODE tells which of the 3 operating modes we might be in:
+#   COMPILED - running in a built version of modus
+#   SRC_CLI - running from source, but from the command line (outside of the editor)
+#   SRC_EDITOR - running from source, inside the editor (including when running via PIE)
+import _fmsubclassing as fms
+ENGINE_MODE = fms.get_engine_env_mode()
+MODE_UNKNOWN, MODE_COMPILED, MODE_SRC_CLI, MODE_SRC_EDITOR = range(4)
+del fms
+IN_EDITOR = (ENGINE_MODE == MODE_SRC_EDITOR)
 
 # During packaging/cooking, the build will fail with strange errors as it tries to load these modules, so
 # prj.py sets a flag for us to let us know that the build is going on
@@ -83,18 +89,18 @@ def Spawn(cls, world=None, select=False):
         if engineClass is not None:
             cls = engineClass
 
-    if select and IN_DEV:
+    if select and IN_EDITOR:
         ue.editor_deselect_actors()
 
     try:
-        if IN_DEV:
+        if IN_EDITOR:
             ue.allow_actor_script_execution_in_editor(True)
         newObj = world.actor_spawn(cls)
     finally:
-        if IN_DEV:
+        if IN_EDITOR:
             ue.allow_actor_script_execution_in_editor(False)
 
-    if select and IN_DEV:
+    if select and IN_EDITOR:
         ue.editor_select_actor(newObj)
 
     return newObj

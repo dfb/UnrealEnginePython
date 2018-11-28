@@ -15,6 +15,29 @@
 #define VALID(obj) (obj != nullptr && obj->IsValidLowLevel())
 #define USEFUL(obj) (VALID(obj) && !obj->IsPendingKill())
 
+// called at startup to get info about the engine environment. Returns:
+// 0 = unsure/error
+// 1 = running a compiled version
+// 2 = running from source outside of the editor
+// 3 = running in the editor (including when running PIE)
+static PyObject *get_engine_env_mode(PyObject *self, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return NULL;
+
+    long envType = 0;
+#if WITH_EDITOR
+    if (GIsEditor) // we can't check "if (GEditor)" here because this gets called even before GEditor is set up
+        envType = 3;
+    else
+        envType = 2;
+#else
+    // no editor features present, we have to be in a built version
+    envType = 1;
+#endif
+    return PyLong_FromLong(envType);
+}
+
 // creates a new UClass class inside UE4
 // basically unreal_engine_new_uclass but uses a new class type in UE4
 UClass *create_new_uclass(char *name, UClass *parent_class, PyObject *pyClass)
@@ -586,6 +609,7 @@ static PyObject *add_interface(PyObject *self, PyObject *args)
 }
 
 static PyMethodDef module_methods[] = {
+    {"get_engine_env_mode", get_engine_env_mode, METH_VARARGS, ""},
     {"create_subclass", create_subclass, METH_VARARGS, ""},
     {"call_ufunction_object", call_ufunction_object, METH_VARARGS, ""},
     {"get_py_proxy", get_py_proxy, METH_VARARGS, ""},

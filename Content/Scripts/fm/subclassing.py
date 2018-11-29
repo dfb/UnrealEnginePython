@@ -158,7 +158,7 @@ class MetaBase(type):
         to the function on the class now).'''
         uFunc = fms.get_ufunction_object(classWithFunction, funcName)
         def _(self, *args, **kwargs):
-            return fms.call_ufunction_object(self.instAddr, self, uFunc, args, kwargs)
+            return fms.call_ufunction_object(self._instAddr, self, uFunc, args, kwargs)
         _.__name__ = funcName
         setattr(newPyClass, funcName, _)
 
@@ -177,29 +177,29 @@ class BridgeBase: #(metaclass=MetaBase): - let the metaclass be specified dynami
         return inst
 
     def __init__(self, instAddr):
-        self.instAddr = instAddr # by convention, the UObject addr is passed to the instance
+        self._instAddr = instAddr # by convention, the UObject addr is passed to the instance
 
     @property
     def uobject(self):
         '''gets the UObject that owns self, wrapped as a python object so it can be passed to other APIs'''
-        return fms.get_ue_inst(self.instAddr)
+        return fms.get_ue_inst(self._instAddr)
 
-    def __setattr__(self, k, v):
-        k = k.lower()
+    def __setattr__(self, origK, v):
+        k = origK.lower()
         if k in self.__class__.__property_names__:
-            fms.set_uproperty_value(self.instAddr, k, v, True)
+            fms.set_uproperty_value(self._instAddr, k, v, True)
         else:
-            super().__setattr__(k, v)
+            self.__dict__[origK] = v
 
-    def __getattr__(self, k):
-        k = k.lower()
+    def __getattr__(self, origK):
+        k = origK.lower()
         if k in self.__class__.__property_names__:
-            return fms.get_uproperty_value(self.instAddr, k)
+            return fms.get_uproperty_value(self._instAddr, k)
         else:
             try:
-                return super().__getattr__(self, k)
-            except AttributeError:
-                raise AttributeError('No such attribute %r' % k)
+                return self.__dict__[origK]
+            except KeyError:
+                raise AttributeError('No such attribute %r' % origK)
 
 class BridgeClassGenerator:
     '''Dynamically creates the bridge class for any UE4 class'''

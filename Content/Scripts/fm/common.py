@@ -56,7 +56,7 @@ BUILDING = (not not int(os.environ.get('MODUS_IS_BUILDING', '0')))
 try:
     from unreal_engine.enums import EWorldType
 except ImportError:
-    # guess they haven't implemented it yet
+    # Not implemented yet - for some reason EWorldType isn't a UENUM so the automagic importer can't work
     class EWorldType:
         NONE, Game, Editor, PIE, EditorPreview, GamePreview, Inactive = range(7)
 

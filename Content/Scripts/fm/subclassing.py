@@ -94,19 +94,24 @@ class MetaBase(type):
         '''Called from __new__ to get set up for UPROPERTY handling - saves list of property names and registers with the
         UClass any properties added by this Python class'''
         # Store a list of all known UPROPERTYs - most of property handling is deferred until they are used so at this point
-        # we just make a note of their names
-        newPyClass.__property_names__ = fms.get_uproperty_names(engineParentClass)
+        # we just make a note of their names. Due to FNames being case-insensitive, we need to be case-insensitive on the Python
+        # side for the most part too.
+        newPyClass.__property_names__ = [x.lower() for x in fms.get_uproperty_names(engineParentClass)]
 
         initialValues = {} # prop name --> default value
-        for k,v in upropList:
+        for origK,v in upropList:
+            k = origK.lower()
             if not isinstance(v, uproperty):
                 continue
             initialValues[k] = v.default # these will be set during init
 
             if k not in newPyClass.__property_names__:
-                # This is not a known property, so we need to register it with the UCclass
+                # This is not a known property, so we need to register it with the UClass. Use the original case to try to
+                # make it look nice, but it's anybody's guess because if anywhere else in the system an FName of the same name
+                # has been created already, its capitalization is what will be used (this matters because UE4 likes to take names
+                # like 'MyIntProp' and display them as 'My Int Prop').
                 newPyClass.__property_names__.append(k)
-                fms.add_uproperty(newPyClass.engineClass, k, v.type, v.is_class)
+                fms.add_uproperty(newPyClass.engineClass, origK, v.type, v.is_class)
 
         newPyClass.__property_defaults__ = initialValues
 
@@ -180,12 +185,14 @@ class BridgeBase: #(metaclass=MetaBase): - let the metaclass be specified dynami
         return fms.get_ue_inst(self.instAddr)
 
     def __setattr__(self, k, v):
+        k = k.lower()
         if k in self.__class__.__property_names__:
             fms.set_uproperty_value(self.instAddr, k, v, True)
         else:
             super().__setattr__(k, v)
 
     def __getattr__(self, k):
+        k = k.lower()
         if k in self.__class__.__property_names__:
             return fms.get_uproperty_value(self.instAddr, k)
         else:

@@ -51,6 +51,7 @@
 #include "Wrappers/UEPyESlateEnums.h"
 
 #include "Wrappers/UEPyFVector.h"
+#include "Wrappers/UEPyFVector2D.h"
 #include "Wrappers/UEPyFHitResult.h"
 #include "Wrappers/UEPyFRotator.h"
 #include "Wrappers/UEPyFTransform.h"
@@ -1662,6 +1663,7 @@ void unreal_engine_init_py_module()
 	}
 
 	ue_python_init_fvector(new_unreal_engine_module);
+	ue_python_init_fvector2d(new_unreal_engine_module);
 	ue_python_init_frotator(new_unreal_engine_module);
 	ue_python_init_ftransform(new_unreal_engine_module);
 	ue_python_init_fhitresult(new_unreal_engine_module);
@@ -2112,11 +2114,15 @@ PyObject *ue_py_convert_property(UProperty *prop, uint8 *buffer, int32 index)
 	{
 		if (auto casted_struct = Cast<UScriptStruct>(casted_prop->Struct))
 		{
-			// check for FVector
 			if (casted_struct == TBaseStructure<FVector>::Get())
 			{
 				FVector vec = *casted_prop->ContainerPtrToValuePtr<FVector>(buffer, index);
 				return py_ue_new_fvector(vec);
+			}
+			if (casted_struct == TBaseStructure<FVector2D>::Get())
+			{
+				FVector2D vec = *casted_prop->ContainerPtrToValuePtr<FVector2D>(buffer, index);
+				return py_ue_new_fvector2d(vec);
 			}
 			if (casted_struct == TBaseStructure<FRotator>::Get())
 			{
@@ -2517,6 +2523,19 @@ bool ue_py_convert_pyobject(PyObject *py_obj, UProperty *prop, uint8 *buffer, in
 			if (casted_prop->Struct == TBaseStructure<FVector>::Get())
 			{
 				*casted_prop->ContainerPtrToValuePtr<FVector>(buffer, index) = py_vec->vec;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	if (ue_PyFVector2D *py_vec = py_ue_is_fvector2d(py_obj))
+	{
+		if (auto casted_prop = Cast<UStructProperty>(prop))
+		{
+			if (casted_prop->Struct == TBaseStructure<FVector2D>::Get())
+			{
+				*casted_prop->ContainerPtrToValuePtr<FVector2D>(buffer, index) = py_vec->vec;
 				return true;
 			}
 		}
@@ -3178,6 +3197,12 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 				prop_struct->Struct = TBaseStructure<FVector>::Get();
 				prop = prop_struct;
 			}
+			else if ((PyTypeObject *)value == &ue_PyFVector2DType)
+			{
+				UStructProperty *prop_struct = NewObject<UStructProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
+				prop_struct->Struct = TBaseStructure<FVector2D>::Get();
+				prop = prop_struct;
+			}
 			else if ((PyTypeObject *)value == &ue_PyFRotatorType)
 			{
 				UStructProperty *prop_struct = NewObject<UStructProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
@@ -3202,7 +3227,7 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 				prop_struct->Struct = TBaseStructure<FTransform>::Get();
 				prop = prop_struct;
 			}
-#if ENGINE_MINOR_VERSION > 15
+#if ENGINE_MINOR_VERSION > 18
 			else if ((PyTypeObject *)value == &ue_PyFQuatType)
 			{
 				UStructProperty *prop_struct = NewObject<UStructProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
@@ -3255,7 +3280,7 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 				prop_base->SetPropertyClass(p_u_class);
 				prop = prop_base;
 			}
-#if ENGINE_MINOR_VERSION > 15
+#if ENGINE_MINOR_VERSION > 17
 			else if (py_obj->ue_object->IsA<UEnum>())
 			{
 				UEnumProperty *prop_enum = NewObject<UEnumProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
@@ -3321,6 +3346,12 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 					prop_struct->Struct = TBaseStructure<FVector>::Get();
 					prop = prop_struct;
 				}
+				else if ((PyTypeObject *)py_return_value == &ue_PyFVector2DType)
+				{
+					UStructProperty *prop_struct = NewObject<UStructProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
+					prop_struct->Struct = TBaseStructure<FVector2D>::Get();
+					prop = prop_struct;
+				}
 				else if ((PyTypeObject *)py_return_value == &ue_PyFRotatorType)
 				{
 					UStructProperty *prop_struct = NewObject<UStructProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
@@ -3345,7 +3376,7 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 					prop_struct->Struct = TBaseStructure<FTransform>::Get();
 					prop = prop_struct;
 				}
-#if ENGINE_MINOR_VERSION > 15
+#if ENGINE_MINOR_VERSION > 18
 				else if ((PyTypeObject *)py_return_value == &ue_PyFQuatType)
 				{
 					UStructProperty *prop_struct = NewObject<UStructProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
@@ -3398,7 +3429,7 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 					prop_base->SetPropertyClass(p_u_class);
 					prop = prop_base;
 				}
-#if ENGINE_MINOR_VERSION > 15
+#if ENGINE_MINOR_VERSION > 17
 				else if (py_obj->ue_object->IsA<UEnum>())
 				{
 					UEnumProperty *prop_enum = NewObject<UEnumProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);

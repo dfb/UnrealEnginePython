@@ -608,6 +608,17 @@ static PyObject *add_interface(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+// tells the engine to perform a garbage collection run
+static PyObject *engine_gc(PyObject *self, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    if (!GEngine)
+        return PyErr_Format(PyExc_Exception, "GEngine is null");
+    GEngine->ForceGarbageCollection(true);
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef module_methods[] = {
     {"get_engine_env_mode", get_engine_env_mode, METH_VARARGS, ""},
     {"create_subclass", create_subclass, METH_VARARGS, ""},
@@ -622,6 +633,7 @@ static PyMethodDef module_methods[] = {
     {"set_uproperty_value", set_uproperty_value, METH_VARARGS, ""},
     {"get_uproperty_value", get_uproperty_value, METH_VARARGS, ""},
     {"add_interface", add_interface, METH_VARARGS, ""},
+    {"engine_gc", engine_gc, METH_VARARGS, ""},
     { NULL, NULL },
 };
 

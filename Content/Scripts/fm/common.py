@@ -6,7 +6,7 @@ Commonly used stuffs
 
 import traceback, time, os, sys, json
 import unreal_engine as ue
-from unreal_engine import UObject, FVector, FRotator, FTransform
+from unreal_engine import UObject, FVector, FRotator, FTransform, FColor, FLinearColor
 
 class Bag(dict):
     def __setattr__(self, k, v): self[k] = v

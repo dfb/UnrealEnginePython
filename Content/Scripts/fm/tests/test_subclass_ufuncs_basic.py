@@ -6,6 +6,7 @@ check the output to veriy it's correct.
 from fm.common import *
 import fm
 bridge = fm.subclassing.bridge
+ufunction = fm.subclassing.ufunction
 
 # Py call of C UFUNC not overridden in Py subclass but exposed by bridge
 # BPviaPy call of C UFUNC not overridden in Py subclass but exposed by bridge

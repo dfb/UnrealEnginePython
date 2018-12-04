@@ -3202,7 +3202,7 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 				prop_struct->Struct = TBaseStructure<FTransform>::Get();
 				prop = prop_struct;
 			}
-#if ENGINE_MINOR_VERSION > 15
+#if ENGINE_MINOR_VERSION > 18
 			else if ((PyTypeObject *)value == &ue_PyFQuatType)
 			{
 				UStructProperty *prop_struct = NewObject<UStructProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
@@ -3255,7 +3255,7 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 				prop_base->SetPropertyClass(p_u_class);
 				prop = prop_base;
 			}
-#if ENGINE_MINOR_VERSION > 15
+#if ENGINE_MINOR_VERSION > 17
 			else if (py_obj->ue_object->IsA<UEnum>())
 			{
 				UEnumProperty *prop_enum = NewObject<UEnumProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
@@ -3345,7 +3345,7 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 					prop_struct->Struct = TBaseStructure<FTransform>::Get();
 					prop = prop_struct;
 				}
-#if ENGINE_MINOR_VERSION > 15
+#if ENGINE_MINOR_VERSION > 18
 				else if ((PyTypeObject *)py_return_value == &ue_PyFQuatType)
 				{
 					UStructProperty *prop_struct = NewObject<UStructProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);
@@ -3398,7 +3398,7 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
 					prop_base->SetPropertyClass(p_u_class);
 					prop = prop_base;
 				}
-#if ENGINE_MINOR_VERSION > 15
+#if ENGINE_MINOR_VERSION > 17
 				else if (py_obj->ue_object->IsA<UEnum>())
 				{
 					UEnumProperty *prop_enum = NewObject<UEnumProperty>(function, UTF8_TO_TCHAR(p_name), RF_Public);

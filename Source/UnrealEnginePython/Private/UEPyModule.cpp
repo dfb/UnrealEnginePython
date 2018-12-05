@@ -101,7 +101,6 @@
 #endif
 
 #include "Wrappers/UEPyFFrameNumber.h"
-#include "Wrappers/UEPyFBoxSphereBounds.h"
 
 #include "Slate/UEPySlate.h"
 #include "Http/UEPyIHttp.h"
@@ -1670,7 +1669,6 @@ void unreal_engine_init_py_module()
 	ue_python_init_fcolor(new_unreal_engine_module);
 	ue_python_init_flinearcolor(new_unreal_engine_module);
 	ue_python_init_fquat(new_unreal_engine_module);
-    ue_python_init_fboxspherebounds(new_unreal_engine_module);
 
 #if ENGINE_MINOR_VERSION >= 20
 	ue_python_init_fframe_number(new_unreal_engine_module);

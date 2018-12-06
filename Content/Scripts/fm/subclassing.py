@@ -49,7 +49,7 @@ class MetaBase(type):
                 uprops.append((k,v))
 
         interfaces = []
-        for cls in dct.pop('interfaces', []):
+        for cls in dct.get('__interfaces__', []):
             assert isinstance(cls, UObject), '%r cannot be used as an interface class' % cls
             assert cls.class_get_flags() & ue.CLASS_INTERFACE, '%r is not an interface class' % cls
             interfaces.append(cls)

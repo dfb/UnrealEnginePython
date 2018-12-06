@@ -15,7 +15,10 @@ if 1:
     MyInterface_C = ue.load_object(BlueprintGeneratedClass, '/Game/MyInterface.MyInterface_C')
 
     class T0(bridge.CChild):
-        interfaces = [MyInterface_C]
+        __interfaces__ = [MyInterface_C]
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.c = 10
 
         @ufunction
         def SomeOtherFunc(self):
@@ -28,6 +31,23 @@ if 1:
         @ufunction
         def Happy(self, intParam:int):
             log('T0.Happy, woot!', intParam)
+
+        @ufunction
+        def CanHaveCrown(self, *args) -> bool:
+            log('T0.CanYaveCrownnnn', args)
+            return True
+
+        @ufunction
+        def GetCounter(self) -> int:
+            self.c += 1
+            log('T0.GetCounter', self.c)
+            return self.c
+
+        if 0:
+            @ufunction
+            def MultiRet(self) -> [int, bool]:
+                log('T0.MultiRet', self.c)
+                return self.c, self.c % 2 == 0
 
         @ufunction
         def Another2(self):

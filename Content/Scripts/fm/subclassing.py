@@ -77,15 +77,15 @@ class MetaBase(type):
             newPyClass.engineClass = fms.create_subclass(name, engineParentClass, newPyClass)
             metaclass.SetupProperties(newPyClass, engineParentClass, uprops)
 
+            # add in any interfaces this class claims to support (TODO: verify that all necessary methods are implemented)
+            for cls in interfaces:
+                fms.add_interface(newPyClass.engineClass, cls)
+
             # Scan the class and process its methods to wire things up with UE4
             if isBridge:
                 metaclass.ProcessBridgeClassMethods(newPyClass, engineParentClass)
             else:
                 metaclass.ProcessBridgeDescendentClassMethods(newPyClass)
-
-            # add in any interfaces this class claims to support (TODO: verify that all necessary methods are implemented)
-            for cls in interfaces:
-                fms.add_interface(newPyClass.engineClass, cls)
 
         return newPyClass
 

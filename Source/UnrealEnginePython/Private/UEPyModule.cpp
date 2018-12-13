@@ -3214,8 +3214,18 @@ UProperty *new_property_from_pyobject(UObject *owner, const char *prop_name, PyO
 
 UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_callable, uint32 function_flags)
 {
+    // check the parent class and any implemented interfaces to see if we're overriding an existing function
 	UFunction *parent_function = u_class->GetSuperClass()->FindFunctionByName(UTF8_TO_TCHAR(name));
-	// if the function is not available in the parent
+	if (!parent_function)
+    {
+        for (const FImplementedInterface& Inter : u_class->Interfaces)
+        {
+            parent_function = Inter.Class ? Inter.Class->FindFunctionByName(UTF8_TO_TCHAR(name)) : nullptr;
+            if (parent_function)
+                break;
+        }
+    }
+
 	// check for name collision
 	if (!parent_function)
 	{

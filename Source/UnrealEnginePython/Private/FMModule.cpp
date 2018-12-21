@@ -414,7 +414,11 @@ static PyObject *add_uproperty(PyObject *self, PyObject *args)
         if (pyPropType == (PyObject *)&PyLong_Type)
             newProp = NewObject<UIntProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
         else if (pyPropType == (PyObject *)&PyBool_Type)
-            newProp = NewObject<UBoolProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+        {
+            UBoolProperty *prop_bool = NewObject<UBoolProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
+            prop_bool->SetBoolSize(1, true);
+            newProp = prop_bool;
+        }
         else if (pyPropType == (PyObject *)&PyFloat_Type)
             newProp = NewObject<UFloatProperty>(engineClass, UTF8_TO_TCHAR(propName), propFlags);
         else if (pyPropType == (PyObject *)&PyUnicode_Type)
@@ -611,11 +615,13 @@ static PyObject *add_interface(PyObject *self, PyObject *args)
 // tells the engine to perform a garbage collection run
 static PyObject *engine_gc(PyObject *self, PyObject *args)
 {
+#if WITH_EDITOR
     if (!PyArg_ParseTuple(args, ""))
         return nullptr;
     if (!GEngine)
         return PyErr_Format(PyExc_Exception, "GEngine is null");
     GEngine->ForceGarbageCollection(true);
+#endif
     Py_RETURN_NONE;
 }
 

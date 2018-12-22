@@ -123,6 +123,11 @@ void FUnrealEnginePythonModule::UESetupPythonInterpreter(bool verbose)
 	{
 #if PY_MAJOR_VERSION >= 3
 		argv[i] = (wchar_t *)(*Args[i]);
+	#if ENGINE_MINOR_VERSION >= 20
+		argv[i] = (wchar_t *)(TCHAR_TO_WCHAR(*Args[i]));
+	#else
+		argv[i] = (wchar_t *)(*Args[i]);
+	#endif
 #else
 		argv[i] = TCHAR_TO_UTF8(*Args[i]);
 #endif

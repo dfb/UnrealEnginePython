@@ -6,15 +6,8 @@ using System.Collections.Generic;
 
 public class UnrealEnginePython : ModuleRules
 {
-
-    // leave this string as empty for triggering auto-discovery of python installations...
-    private string pythonHome = "";
-    // otherwise specify the path of your python installation
-    //private string pythonHome = "C:/Program Files/Python36";
-    // this is an example for Homebrew on Mac
-    //private string pythonHome = "/usr/local/Cellar/python3/3.6.0/Frameworks/Python.framework/Versions/3.6/";
-    // on Linux an include;libs syntax is expected:
-    //private string pythonHome = "/usr/local/include/python3.6;/usr/local/lib/libpython3.6.so"
+    // leave this string as empty - it gets set below
+    private string pythonHome;
 
     private string[] windowsKnownPaths =
     {
@@ -93,7 +86,7 @@ public class UnrealEnginePython : ModuleRules
     public UnrealEnginePython(TargetInfo Target)
 #endif
     {
-
+        pythonHome = Path.GetFullPath(Path.Combine(ModuleDirectory, "../../../../extras/python"));
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
         string enableUnityBuild = System.Environment.GetEnvironmentVariable("UEP_ENABLE_UNITY_BUILD");
         bFasterWithoutUnity = string.IsNullOrEmpty(enableUnityBuild);
@@ -271,6 +264,25 @@ public class UnrealEnginePython : ModuleRules
             AdditionalPropertiesForReceipt.Add(new ReceiptProperty("AndroidPlugin", RelAPLPath));
         }
 #endif
+
+        // for now it works only if the python files live in the same dir as the plugin DLL, so copy them over
+        string destDir = Path.Combine(ModuleDirectory, "../../Binaries/Win64");
+        if (!Directory.Exists(destDir))
+            Directory.CreateDirectory(destDir);
+
+        foreach(string srcFilename in Directory.GetFiles(pythonHome, "*.*", SearchOption.TopDirectoryOnly))
+        {
+            if (srcFilename.EndsWith(".exe")) // don't need e.g. python.exe in there
+                continue;
+            string destFilename = Path.GetFullPath(Path.Combine(destDir, Path.GetFileName(srcFilename)));
+            if (!File.Exists(destFilename))
+            {
+                File.Copy(srcFilename, destFilename);
+                System.Console.WriteLine("Copying " + srcFilename + " --> " + destFilename);
+            }
+        }
+        System.Threading.Thread.Sleep(1000); // grr
+        System.Console.WriteLine("Done copying files");
 
     }
 

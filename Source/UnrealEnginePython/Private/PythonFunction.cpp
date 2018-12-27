@@ -42,7 +42,10 @@ void UPythonFunction::CallPythonCallable(FFrame& Stack, RESULT_DECL)
 	argn = 0;
 
 	if (Context && !is_static) {
-		PyObject *py_obj = (PyObject *)ue_get_python_uobject(Context);
+		ue_PyUObject *ue_py_obj = ue_get_python_uobject(Context);
+        PyObject *py_obj = (PyObject *)ue_py_obj;
+        if (ue_py_obj && function->use_proxy)
+            py_obj = ue_py_obj->py_proxy;
 		if (!py_obj) {
 			unreal_engine_py_log_error();
 			on_error = true;

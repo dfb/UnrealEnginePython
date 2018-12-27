@@ -34,6 +34,9 @@ public:
 	// __dict__ is stored here
 	ue_PyUObject *py_uobject;
 
+    // the Python class this UE4 class binds to
+    PyObject *pyClass;
+
 private:
 
 	PyObject * py_constructor;

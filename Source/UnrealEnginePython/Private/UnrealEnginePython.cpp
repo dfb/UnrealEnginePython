@@ -26,6 +26,7 @@
 
 void unreal_engine_init_py_module();
 void init_unreal_engine_builtin();
+void fm_init_module();
 
 #if PLATFORM_LINUX
 const char *ue4_module_options = "linux_global_symbols";
@@ -121,6 +122,7 @@ void FUnrealEnginePythonModule::UESetupPythonInterpreter(bool verbose)
 	for (int32 i = 0; i < Args.Num(); i++)
 	{
 #if PY_MAJOR_VERSION >= 3
+		argv[i] = (wchar_t *)(*Args[i]);
 	#if ENGINE_MINOR_VERSION >= 20
 		argv[i] = (wchar_t *)(TCHAR_TO_WCHAR(*Args[i]));
 	#else
@@ -134,6 +136,7 @@ void FUnrealEnginePythonModule::UESetupPythonInterpreter(bool verbose)
 	PySys_SetArgv(Args.Num(), argv);
 
 	unreal_engine_init_py_module();
+    fm_init_module();
 
 	PyObject *py_sys = PyImport_ImportModule("sys");
 	PyObject *py_sys_dict = PyModule_GetDict(py_sys);

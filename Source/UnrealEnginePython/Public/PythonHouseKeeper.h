@@ -167,6 +167,7 @@ public:
 	{
 		uint32 Garbaged = 0;
 		TArray<UObject *> BrokenList;
+        TArray<ue_PyUObject *> needDecRef;
 		for (auto &UObjectPyItem : UObjectPyMapping)
 		{
 			UObject *Object = UObjectPyItem.Key;
@@ -182,13 +183,25 @@ public:
 				BrokenList.Add(Object);
 				Garbaged++;
 		}
+			else if (Tracker.PyUObject->ob_base.ob_refcnt == 1)
+			{	// the tracker is the only thing keeping this alive, so release the last reference
+#if defined(UEPY_MEMORY_DEBUG)
+				UE_LOG(LogPython, Warning, TEXT("Auto-decrefing UObject at %p %s"), Object, *Object->GetName());
+#endif
+                needDecRef.Add(Tracker.PyUObject);
+            }
 			else
 			{
 #if defined(UEPY_MEMORY_DEBUG)
-				UE_LOG(LogPython, Error, TEXT("UObject at %p %s is in use"), Object, *Object->GetName());
+				UE_LOG(LogPython, Error, TEXT("UObject at %p %s is in use, py ref count %d"), Object, *Object->GetName(), Tracker.PyUObject->ob_base.ob_refcnt);
 #endif
 	}
 		}
+
+        for (ue_PyUObject *py_obj : needDecRef)
+        {
+            Py_DECREF(py_obj); // on the next GC run, this object will dealloc and unregister itself
+        }
 
 		for (UObject *Object : BrokenList)
 		{

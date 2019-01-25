@@ -11,14 +11,38 @@ The general starting point and goals we use for subclassing are:
 '''
 from . common import *
 import _fmsubclassing as fms
+import types
 from unreal_engine import classes as engine_classes
 
+# Define the flags you can use with the ufunction decorator - see Runtime\CoreUObject\Public\UObject\Script.h to add more
+class FuncFlag(int): pass
+Event = FuncFlag(0x00000800 | 0x08000000)
+Static = FuncFlag(0x00002000)
+Reliable = FuncFlag(0x00000080)
+Multicast = FuncFlag(0x00004000)
+Server = FuncFlag(0x00200000)
+Client = FuncFlag(0x01000000)
+Pure = BlueprintPure = FuncFlag(0x10000000)
+
 # decorator that is roughly equivalent to UFUNCTION() in C++ - use this on a method in a subclass to cause it to
-# be exposed as callable
-# TODO: add support for pure=True, etc.
-def ufunction(f):
-    f.ufunction = True
-    return f
+# be exposed as callable. Anything the decorator is used on is automatically marked as native, public, and BlueprintCallable,
+# so those flags are never needed. The decorator can be used in two ways:
+#    @ufunction
+#    @ufunction(...one or more FuncFlags...)
+def ufunction(f, *args):
+    if isinstance(f, types.FunctionType):
+        # Used without params
+        assert not args, args
+        f.ufunc_flags = () # the presence of this function member is enough
+        return f
+    else:
+        # With params
+        def wrap(f):
+            for arg in args:
+                assert isinstance(arg, FuncFlag), 'Invalid ufunction param %s for %s' % (arg, f)
+            f.ufunc_flags = args
+            return f
+        return wrap
 
 # used for declaring UPROPERTYs. Use when creating class vars: myVar = uproperty(FVector, FVector(1,2,3)). By default, implies BlueprintReadWrite.
 # TODO: add support for replication, editanywhere, BPReadOnly, repnotify, and other flags. myVar = uproperty(default, *kwFlags)
@@ -133,16 +157,23 @@ class MetaBase(type):
         for k,v in list(newPyClass.__dict__.items()):
             if k.startswith('__') or k in ('engineClass',):
                 continue
-            if not callable(v) or not getattr(v, 'ufunction', None):
+            if not callable(v):
+                continue
+            flags = getattr(v, 'ufunc_flags', None)
+            if flags is None:
                 continue
             funcName, func = k,v
+
+            funcFlags = 0
+            for flag in flags:
+                funcFlags |= flag
 
             # Add the method to the class but under a different name so it doesn't get stomped by the stuff below
             hiddenFuncName = '_orig_' + funcName
             setattr(newPyClass, hiddenFuncName, func)
 
             # Expose a UFUNCTION in C++ that calls this method
-            fms.add_ufunction(newPyClass.engineClass, funcName, func)
+            fms.add_ufunction(newPyClass.engineClass, funcName, func, funcFlags)
 
             # Make it so that from Python you can use that name to call the UFUNCTION version in UE4 (so that things
             # like replication work)

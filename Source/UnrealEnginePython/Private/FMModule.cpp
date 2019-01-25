@@ -309,15 +309,15 @@ static PyObject *add_ufunction(PyObject *self, PyObject *args)
     PyObject *pyEngineClass;
     char *funcName;
     PyObject *pyFunc;
-    if (!PyArg_ParseTuple(args, "OsO", &pyEngineClass, &funcName, &pyFunc))
+    unsigned int extraFlags;
+    if (!PyArg_ParseTuple(args, "OsOI", &pyEngineClass, &funcName, &pyFunc, &extraFlags))
         return NULL;
 
     UClass *engineClass = ue_py_check_type<UClass>(pyEngineClass);
     if (!engineClass)
         return PyErr_Format(PyExc_Exception, "Provide the UClass to attach the function to");
 
-    // TODO: compute correct set of function flags
-    uint32 funcFlags = FUNC_Native | FUNC_BlueprintCallable | FUNC_Public;
+    uint32 funcFlags = FUNC_Native | FUNC_BlueprintCallable | FUNC_Public | extraFlags;
     UPythonFunction *newFunc = (UPythonFunction *)unreal_engine_add_function(engineClass, funcName, pyFunc, funcFlags);
     if (newFunc)
     {

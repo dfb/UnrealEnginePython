@@ -1181,12 +1181,10 @@ static void ue_pyobject_dealloc(ue_PyUObject *self)
 #if defined(UEPY_MEMORY_DEBUG)
 	UE_LOG(LogPython, Warning, TEXT("Destroying ue_PyUObject %p mapped to UObject %p"), self, self->ue_object);
 #endif
-    FUnrealEnginePythonHouseKeeper *housekeeper = FUnrealEnginePythonHouseKeeper::Get();
 	if (self->owned)
 	{
-		housekeeper->UntrackUObject(self->ue_object);
+        FUnrealEnginePythonHouseKeeper::Get()->UntrackUObject(self->ue_object);
 	}
-    housekeeper->UnregisterPyUObject(self->ue_object);
 
 	if (self->auto_rooted && (self->ue_object && self->ue_object->IsValidLowLevel() && self->ue_object->IsRooted()))
 	{
@@ -1329,7 +1327,9 @@ static int ue_PyUObject_setattro(ue_PyUObject *self, PyObject *attr_name, PyObje
 		{
 #if WITH_EDITOR
             if (!self->creating)
-			self->ue_object->PreEditChange(u_property);
+            {
+			    self->ue_object->PreEditChange(u_property);
+            }
 #endif
 			if (ue_py_convert_pyobject(value, u_property, (uint8*)self->ue_object, 0))
 			{
@@ -1874,10 +1874,7 @@ ue_PyUObject *ue_get_python_uobject(UObject *ue_obj)
 		ue_py_object->py_dict = PyDict_New();
 		ue_py_object->owned = 0;
 
-        FUnrealEnginePythonHouseKeeper *housekeeper = FUnrealEnginePythonHouseKeeper::Get();
-        housekeeper->RegisterPyUObject(ue_obj, ue_py_object);
-        Py_INCREF(ue_py_object); // this is needed only because the following decrefs it
-        housekeeper->TrackUObject(ue_obj);
+        FUnrealEnginePythonHouseKeeper::Get()->RegisterPyUObject(ue_obj, ue_py_object);
 
 #if defined(UEPY_MEMORY_DEBUG)
 		UE_LOG(LogPython, Warning, TEXT("CREATED UPyObject at %p for %p %s"), ue_py_object, ue_obj, *ue_obj->GetName());

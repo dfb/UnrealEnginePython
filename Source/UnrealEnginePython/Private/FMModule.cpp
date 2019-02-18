@@ -227,7 +227,7 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
                 if (!pyInst)
                 {
                     LERROR("failed to instantiate python class");
-                    PyErr_Format(PyExc_Exception, "Failed to instantiate python clsas");
+                    PyErr_Format(PyExc_Exception, "Failed to instantiate python class");
                     return;
                 }
                 pyObj->py_proxy = pyInst; // pyInst's ref is now owned by py_proxy. TODO: who decref's this later?

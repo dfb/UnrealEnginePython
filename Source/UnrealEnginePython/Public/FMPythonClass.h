@@ -22,6 +22,9 @@ public:
     // true while we're creating this class (including the stuff in Python)
     bool creating;
 
+protected:
+    virtual UObject* CreateDefaultObject() override;
+
 private:
 
 	PyObject * py_constructor;

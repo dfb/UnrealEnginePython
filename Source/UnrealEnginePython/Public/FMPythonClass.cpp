@@ -20,3 +20,15 @@ void UFMPythonClass::CallPyConstructor(ue_PyUObject *self)
 }
 
 
+UObject* UFMPythonClass::CreateDefaultObject()
+{
+    bool savedLoad = GIsInitialLoad;
+
+    // this is a total hack but be need to go around the default
+    // package loading logic when loading default objects
+    GIsInitialLoad = false;
+    UObject *ret = Super::CreateDefaultObject();
+    GIsInitialLoad = savedLoad;
+
+    return ret;
+}

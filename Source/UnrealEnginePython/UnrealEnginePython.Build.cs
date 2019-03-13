@@ -93,7 +93,6 @@ public class UnrealEnginePython : ModuleRules
 
         PublicIncludePaths.AddRange(
             new string[] {
-                "UnrealEnginePython/Public",
 				// ... add public include paths required here ...
             }
             );
@@ -101,7 +100,9 @@ public class UnrealEnginePython : ModuleRules
 
         PrivateIncludePaths.AddRange(
             new string[] {
+#if !UE_4_22_OR_LATER
                 "UnrealEnginePython/Private",
+#endif
 				// ... add other private include paths required here ...
 			}
             );

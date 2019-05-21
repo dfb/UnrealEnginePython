@@ -150,7 +150,7 @@ void init_unreal_engine_builtin()
 
 static PyObject *py_unreal_engine_py_gc(PyObject * self, PyObject * args)
 {
-	int32 Garbaged = FUnrealEnginePythonHouseKeeper::Get()->RunGC();
+	int32 Garbaged = 0; //FUnrealEnginePythonHouseKeeper::Get()->RunGC();
 	return PyLong_FromLong(Garbaged);
 
 }
@@ -1180,20 +1180,9 @@ static PyMethodDef ue_PyUObject_methods[] = {
 static void ue_pyobject_dealloc(ue_PyUObject *self)
 {
 #if defined(UEPY_MEMORY_DEBUG)
-	UE_LOG(LogPython, Warning, TEXT("Destroying ue_PyUObject %p mapped to UObject %p"), self, self->ue_object);
+    UE_LOG(LogPython, Warning, _T("REF DEALLO for py %p"), self);
 #endif
-	if (self->owned)
-	{
-		FUnrealEnginePythonHouseKeeper::Get()->UntrackUObject(self->ue_object);
-	}
-
-	if (self->auto_rooted && (self->ue_object && self->ue_object->IsValidLowLevel() && self->ue_object->IsRooted()))
-	{
-		self->ue_object->RemoveFromRoot();
-	}
-
 	Py_XDECREF(self->py_dict);
-
 	Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -1422,9 +1411,6 @@ static PyObject *ue_PyUObject_call(ue_PyUObject *self, PyObject *args, PyObject 
 		{
 			return NULL;
 		}
-		// when new_object is called the reference counting is 2 and is registered in the GC
-		// UObject crated explicitely from python, will be managed by python...
-		FUnrealEnginePythonHouseKeeper::Get()->TrackUObject(ret->ue_object);
 
 		return (PyObject *)ret;
 	}
@@ -1489,7 +1475,7 @@ static PyObject *ue_PyUObject_call(ue_PyUObject *self, PyObject *args, PyObject 
 	return PyErr_Format(PyExc_Exception, "the specified uobject has no __call__ support");
 }
 
-static PyTypeObject ue_PyUObjectType = {
+PyTypeObject ue_PyUObjectType = {
 	PyVarObject_HEAD_INIT(NULL, 0)
 	"unreal_engine.UObject",             /* tp_name */
 	sizeof(ue_PyUObject), /* tp_basicsize */
@@ -1849,35 +1835,7 @@ void unreal_engine_init_py_module()
 
 ue_PyUObject *ue_get_python_uobject(UObject *ue_obj)
 {
-	if (!ue_obj)
-		return nullptr;
-
-	ue_PyUObject *ret = FUnrealEnginePythonHouseKeeper::Get()->GetPyUObject(ue_obj);
-	if (!ret)
-	{
-		if (!ue_obj->IsValidLowLevel() || ue_obj->IsPendingKillOrUnreachable())
-			return nullptr;
-
-		ue_PyUObject *ue_py_object = (ue_PyUObject *)PyObject_New(ue_PyUObject, &ue_PyUObjectType);
-		if (!ue_py_object)
-		{
-			return nullptr;
-		}
-		ue_py_object->ue_object = ue_obj;
-		ue_py_object->py_proxy = nullptr;
-		ue_py_object->auto_rooted = 0;
-		ue_py_object->py_dict = PyDict_New();
-		ue_py_object->owned = 0;
-
-		FUnrealEnginePythonHouseKeeper::Get()->RegisterPyUObject(ue_obj, ue_py_object);
-
-#if defined(UEPY_MEMORY_DEBUG)
-		UE_LOG(LogPython, Warning, TEXT("CREATED UPyObject at %p for %p %s"), ue_py_object, ue_obj, *ue_obj->GetName());
-#endif
-		return ue_py_object;
-	}
-	return ret;
-
+    return FUnrealEnginePythonHouseKeeper::Get()->WrapEngineObject(ue_obj);
 }
 
 ue_PyUObject *ue_get_python_uobject_inc(UObject *ue_obj)

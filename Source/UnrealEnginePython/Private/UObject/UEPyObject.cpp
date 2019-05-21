@@ -1439,7 +1439,6 @@ PyObject *py_ue_own(ue_PyUObject *self, PyObject * args)
 	Py_DECREF(self);
 
 	self->owned = 1;
-	FUnrealEnginePythonHouseKeeper::Get()->TrackUObject(self->ue_object);
 
 	Py_RETURN_NONE;
 }
@@ -1457,7 +1456,6 @@ PyObject *py_ue_disown(ue_PyUObject *self, PyObject * args)
 	Py_INCREF(self);
 
 	self->owned = 0;
-	FUnrealEnginePythonHouseKeeper::Get()->UntrackUObject(self->ue_object);
 
 	Py_RETURN_NONE;
 }

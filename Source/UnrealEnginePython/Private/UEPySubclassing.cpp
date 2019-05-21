@@ -43,7 +43,7 @@ int unreal_engine_py_init(ue_PyUObject *self, PyObject *args, PyObject *kwds)
 		self->auto_rooted = 0;
 		self->py_dict = PyDict_New();
 
-		FUnrealEnginePythonHouseKeeper::Get()->RegisterPyUObject(new_class, self);
+        FUnrealEnginePythonHouseKeeper::Get()->WrapEngineObject(new_class);
 
 		PyObject *py_additional_properties = PyDict_New();
 

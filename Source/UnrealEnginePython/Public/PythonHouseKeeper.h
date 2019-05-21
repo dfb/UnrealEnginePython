@@ -9,19 +9,33 @@
 #include "PythonDelegate.h"
 #include "PythonSmartDelegate.h"
 
+// Anytime an engine object is passed to Python, it is sent back wrapped in a ue_PyUObject instance. As
+// long as that wrapper exists, we need to ensure that the corresponding engine object it wraps stays
+// alive, because holding a reference to a wrapper should result in the same behavior as holding a reference
+// to the engine object itself. IOW, the engine doesn't know about references to engine objects that are being
+// used/stored in Python, so it could erroneously clean up an object because it thinks nobody is using it
+// anymore, so there needs to be something that makes sure engine objects being used by Python stay alive.
+//
+// The housekeeper is a singleton that solves this problem. Anytime an engine object needs to be passed to
+// Python, the housekeeper creates a ue_PyUObject wrapper (or reuses an existing one for that engine object)
+// and sends it to Python. The housekeeper also maintains an internal list of which engine objects are currently
+// in use by Python and then hooks into the UE4 garbage collector to tell it that those objects cannot be
+// destroyed just yet.
 class FUnrealEnginePythonHouseKeeper : public FGCObject
 {
-    struct FPythonUOjectTracker
+    struct FPythonUObjectTracker
     {
-        FWeakObjectPtr Owner;
+#if defined(UEPY_MEMORY_DEBUG)
+        FString ObjName;
+#endif
         ue_PyUObject *PyUObject;
-        bool bPythonOwned;
 
-        FPythonUOjectTracker(UObject *Object, ue_PyUObject *InPyUObject)
+        FPythonUObjectTracker(UObject *Object, ue_PyUObject *InPyUObject)
         {
-            Owner = FWeakObjectPtr(Object);
-            PyUObject = InPyUObject;
-            bPythonOwned = false;
+#if defined(UEPY_MEMORY_DEBUG)
+            ObjName = Object->GetName();
+#endif
+            PyUObject = InPyUObject; // we own this ref
         }
     };
 
@@ -57,13 +71,12 @@ public:
 
 	virtual void AddReferencedObjects(FReferenceCollector& InCollector) override;
 	static FUnrealEnginePythonHouseKeeper *Get();
-	int32 RunGC();
+    int32 RunGC();
 	bool IsValidPyUObject(ue_PyUObject *PyUObject);
-	void TrackUObject(UObject *Object);
-	void UntrackUObject(UObject *Object);
-	void RegisterPyUObject(UObject *Object, ue_PyUObject *InPyUObject);
-	void UnregisterPyUObject(UObject *Object);
-	ue_PyUObject *GetPyUObject(UObject *Object);
+
+    // Given an engine object, returns a borrowed ref to a Python wrapper for it or null if the engine object is invalid
+	ue_PyUObject *WrapEngineObject(UObject *Object);
+
 	UPythonDelegate *FindDelegate(UObject *Owner, PyObject *PyCallable);
 	UPythonDelegate *NewDelegate(UObject *Owner, PyObject *PyCallable, UFunction *Signature);
 	TSharedRef<FPythonSlateDelegate> NewSlateDelegate(TSharedRef<SWidget> Owner, PyObject *PyCallable);
@@ -73,17 +86,15 @@ public:
 	TSharedRef<FPythonSlateDelegate> NewStaticSlateDelegate(PyObject *PyCallable);
 
 private:
-	void RunGCDelegate();
-	uint32 PyUObjectsGC();
+    void RunGCDelegate();
+    uint32 PyUObjectsGC();
 	int32 DelegatesGC();
 
-	TMap<UObject *, FPythonUOjectTracker> UObjectPyMapping;
+	TMap<UObject *, FPythonUObjectTracker> UObjectPyMapping;
 	TArray<FPythonDelegateTracker> PyDelegatesTracker;
 
 	TArray<FPythonSWidgetDelegateTracker> PySlateDelegatesTracker;
 	TArray<TSharedRef<FPythonSlateDelegate>> PyStaticSlateDelegatesTracker;
 
 	TArray<TSharedRef<FPythonSmartDelegate>> PyStaticSmartDelegatesTracker;
-
-	TArray<UObject *> PythonTrackedObjects;
 };

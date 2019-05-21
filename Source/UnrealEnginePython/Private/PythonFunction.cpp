@@ -192,7 +192,6 @@ UPythonFunction::~UPythonFunction()
 {
 	FScopePythonGIL gil;
 	Py_XDECREF(py_callable);
-	FUnrealEnginePythonHouseKeeper::Get()->UnregisterPyUObject(this);
 #if defined(UEPY_MEMORY_DEBUG)
 	UE_LOG(LogPython, Warning, TEXT("PythonFunction callable %p XDECREF'ed"), this);
 #endif

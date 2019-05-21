@@ -1,10 +1,11 @@
 #pragma once
 
 #include "PythonHouseKeeper.h"
+extern PyTypeObject ue_PyUObjectType;
 
 void FUnrealEnginePythonHouseKeeper::AddReferencedObjects(FReferenceCollector& InCollector)
 {
-    InCollector.AddReferencedObjects(PythonTrackedObjects);
+    InCollector.AddReferencedObjects(UObjectPyMapping);
 }
 
 FUnrealEnginePythonHouseKeeper *FUnrealEnginePythonHouseKeeper::Get()
@@ -42,111 +43,84 @@ bool FUnrealEnginePythonHouseKeeper::IsValidPyUObject(ue_PyUObject *PyUObject)
         return false;
 
     UObject *Object = PyUObject->ue_object;
-    FPythonUOjectTracker *Tracker = UObjectPyMapping.Find(Object);
+    FPythonUObjectTracker *Tracker = UObjectPyMapping.Find(Object);
     if (!Tracker)
     {
         return false;
     }
 
-    if (!Tracker->Owner.IsValid())
+    if (!Object->IsValidLowLevel())
         return false;
 
     return true;
 
 }
 
-void FUnrealEnginePythonHouseKeeper::TrackUObject(UObject *Object)
+ue_PyUObject *FUnrealEnginePythonHouseKeeper::WrapEngineObject(UObject *Object)
 {
-    FPythonUOjectTracker *Tracker = UObjectPyMapping.Find(Object);
-    if (!Tracker)
-    {
-        return;
-    }
-    if (Tracker->bPythonOwned)
-        return;
-    Tracker->bPythonOwned = true;
-    // when a new ue_PyUObject spawns, it has a reference counting of two
-    Py_DECREF(Tracker->PyUObject);
-    Tracker->PyUObject->owned = 1;
-    PythonTrackedObjects.Add(Object);
-}
-
-void FUnrealEnginePythonHouseKeeper::UntrackUObject(UObject *Object)
-{
-    PythonTrackedObjects.Remove(Object);
-}
-
-void FUnrealEnginePythonHouseKeeper::RegisterPyUObject(UObject *Object, ue_PyUObject *InPyUObject)
-{
-    UObjectPyMapping.Add(Object, FPythonUOjectTracker(Object, InPyUObject));
-}
-
-void FUnrealEnginePythonHouseKeeper::UnregisterPyUObject(UObject *Object)
-{
-    UObjectPyMapping.Remove(Object);
-}
-
-ue_PyUObject *FUnrealEnginePythonHouseKeeper::GetPyUObject(UObject *Object)
-{
-    FPythonUOjectTracker *Tracker = UObjectPyMapping.Find(Object);
-    if (!Tracker)
-    {
-        return nullptr;
-    }
-
-    if (!Tracker->Owner.IsValid(true))
+    if (!Object || !Object->IsValidLowLevel() || Object->IsPendingKillOrUnreachable())
     {
 #if defined(UEPY_MEMORY_DEBUG)
-        UE_LOG(LogPython, Warning, TEXT("DEFREF'ing UObject at %p (refcnt: %d)"), Object, Tracker->PyUObject->ob_base.ob_refcnt);
+        UE_LOG(LogPython, Error, _T("Cannot WrapEngineObject for invalid object %p"), Object);
 #endif
-        if (!Tracker->bPythonOwned)
-            Py_DECREF((PyObject *)Tracker->PyUObject);
-        UnregisterPyUObject(Object);
         return nullptr;
-}
+    }
 
-    return Tracker->PyUObject;
+    // if somebody else already has a wrapper for this engine object, reuse it
+    FPythonUObjectTracker *Tracker = UObjectPyMapping.Find(Object);
+    if (Tracker)
+        return Tracker->PyUObject;
+
+    // we don't currently have a wrapper for this engine object, so create one
+    ue_PyUObject *ue_py_object = (ue_PyUObject *)PyObject_New(ue_PyUObject, &ue_PyUObjectType);
+    if (!ue_py_object)
+        return nullptr;
+#if defined(UEPY_MEMORY_DEBUG)
+    UE_LOG(LogPython, Warning, _T("REF CREATE for %s (%p), py %p"), *Object->GetName(), Object, ue_py_object);
+#endif
+    ue_py_object->ue_object = Object;
+    ue_py_object->py_proxy = nullptr;
+    ue_py_object->auto_rooted = 0;
+    ue_py_object->py_dict = PyDict_New();
+    ue_py_object->owned = 0;
+
+    UObjectPyMapping.Add(Object, FPythonUObjectTracker(Object, ue_py_object));
+    return ue_py_object;
 }
 
 uint32 FUnrealEnginePythonHouseKeeper::PyUObjectsGC()
 {
-    uint32 Garbaged = 0;
-    TArray<UObject *> BrokenList;
-    for (auto &UObjectPyItem : UObjectPyMapping)
+    // we periodically scan our list of tracked objects to see if any of the Python wrappers have a refcount of 1,
+    // which means that the housekeeper is the only remaining ref so the wrapper should be destroyed.
+    TArray<UObject *> objsToRemove;
+    for (auto& entry : UObjectPyMapping)
     {
-        UObject *Object = UObjectPyItem.Key;
-        FPythonUOjectTracker &Tracker = UObjectPyItem.Value;
-#if defined(UEPY_MEMORY_DEBUG)
-        UE_LOG(LogPython, Warning, TEXT("Checking for UObject at %p"), Object);
-#endif
-        if (!Tracker.Owner.IsValid(true))
+        UObject *Object = entry.Key;
+        FPythonUObjectTracker &Tracker = entry.Value;
+        if (Py_REFCNT(Tracker.PyUObject) <= 1)
         {
 #if defined(UEPY_MEMORY_DEBUG)
-            UE_LOG(LogPython, Warning, TEXT("Removing UObject at %p (refcnt: %d)"), Object, Tracker.PyUObject->ob_base.ob_refcnt);
+            UE_LOG(LogPython, Warning, _T("REF DESTRY for %s (%p), py %p"), *Tracker.ObjName, Object, Tracker.PyUObject);
 #endif
-            BrokenList.Add(Object);
-            Garbaged++;
-    }
-        else
-        {
+            objsToRemove.Add(Object);
+            Py_CLEAR(Tracker.PyUObject);
+        }
 #if defined(UEPY_MEMORY_DEBUG)
-            UE_LOG(LogPython, Error, TEXT("UObject at %p %s is in use"), Object, *Object->GetName());
+        else if (!Object->IsValidLowLevel())
+        {
+            UE_LOG(LogPython, Error, _T("REF engine obj %s (%p) GC'd out from under us (py %p)"), *Tracker.ObjName, Object, Tracker.PyUObject);
+        }
 #endif
-}
     }
 
-    for (UObject *Object : BrokenList)
+    uint32 removed = 0;
+    for (UObject *Object : objsToRemove)
     {
-        FPythonUOjectTracker &Tracker = UObjectPyMapping[Object];
-        if (!Tracker.bPythonOwned)
-            Py_DECREF((PyObject *)Tracker.PyUObject);
-        UnregisterPyUObject(Object);
+        removed++;
+        UObjectPyMapping.Remove(Object);
     }
-
-    return Garbaged;
-
+    return removed;
 }
-
 
 int32 FUnrealEnginePythonHouseKeeper::DelegatesGC()
 {

@@ -88,6 +88,7 @@ public:
 private:
     void RunGCDelegate();
     uint32 PyUObjectsGC();
+    void OnPIEEvent(bool IsSimulating);
 	int32 DelegatesGC();
 
 	TMap<UObject *, FPythonUObjectTracker> UObjectPyMapping;

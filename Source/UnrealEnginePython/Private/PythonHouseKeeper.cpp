@@ -1,7 +1,9 @@
 #pragma once
+//#pragma optimize("", off)
 
 #include "PythonHouseKeeper.h"
 extern PyTypeObject ue_PyUObjectType;
+
 
 void FUnrealEnginePythonHouseKeeper::AddReferencedObjects(FReferenceCollector& InCollector)
 {
@@ -20,8 +22,20 @@ FUnrealEnginePythonHouseKeeper *FUnrealEnginePythonHouseKeeper::Get()
 #else
         FCoreUObjectDelegates::PostGarbageCollect.AddRaw(Singleton, &FUnrealEnginePythonHouseKeeper::RunGCDelegate);
 #endif
+
+#if WITH_EDITOR
+        // PIE blows up if we don't run GC before shutting down
+        FEditorDelegates::PrePIEEnded.AddRaw(Singleton, &FUnrealEnginePythonHouseKeeper::OnPIEEvent);
+        FEditorDelegates::EndPIE.AddRaw(Singleton, &FUnrealEnginePythonHouseKeeper::OnPIEEvent);
+#endif
     }
     return Singleton;
+}
+
+void FUnrealEnginePythonHouseKeeper::OnPIEEvent(bool IsSimulating)
+{
+    FScopePythonGIL gil;
+    RunGC();
 }
 
 void FUnrealEnginePythonHouseKeeper::RunGCDelegate()

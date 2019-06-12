@@ -18,6 +18,11 @@ static PyObject *py_ue_fquat_euler(ue_PyFQuat *self, PyObject * args)
 	return py_ue_new_fvector(self->quat.Euler());
 }
 
+static PyObject *py_ue_fquat_rotator(ue_PyFQuat *self, PyObject * args)
+{
+    return py_ue_new_frotator(self->quat.Rotator());
+}
+
 static PyObject *py_ue_fquat_get_axis_x(ue_PyFQuat *self, PyObject * args)
 {
 	return py_ue_new_fvector(self->quat.GetAxisX());
@@ -48,12 +53,30 @@ static PyObject *py_ue_fquat_vector(ue_PyFQuat *self, PyObject * args)
 	return py_ue_new_fvector(self->quat.Vector());
 }
 
+static PyObject *py_ue_fquat_find_between_vectors(ue_PyFQuat *self, PyObject *args)
+{
+    PyObject *py_obj1; 
+    PyObject *py_obj2;
+    if (!PyArg_ParseTuple(args, "OO:find_between_vectors", &py_obj1, &py_obj2))
+        return nullptr;
+
+    ue_PyFVector *py_vector1 = py_ue_is_fvector(py_obj1);
+    if (!py_vector1)
+		return PyErr_Format(PyExc_TypeError, "argument is not a FVector");
+
+    ue_PyFVector *py_vector2 = py_ue_is_fvector(py_obj2);
+    if (!py_vector1)
+		return PyErr_Format(PyExc_TypeError, "argument is not a FVector");
+
+    return py_ue_new_fquat(FQuat::FindBetweenVectors(py_vector1->vec, py_vector2->vec));
+}
+
 static PyMethodDef ue_PyFQuat_methods[] = {
 #if ENGINE_MINOR_VERSION > 12
 	{ "angular_distance", (PyCFunction)py_ue_fquat_angular_distance, METH_VARARGS, "" },
 #endif
 	{ "euler", (PyCFunction)py_ue_fquat_euler, METH_VARARGS, "" },
-	{ "rotator", (PyCFunction)py_ue_fquat_euler, METH_VARARGS, "" },
+	{ "rotator", (PyCFunction)py_ue_fquat_rotator, METH_VARARGS, "" },
 	{ "get_axis_x", (PyCFunction)py_ue_fquat_get_axis_x, METH_VARARGS, "" },
 	{ "get_axis_y", (PyCFunction)py_ue_fquat_get_axis_y, METH_VARARGS, "" },
 	{ "get_axis_z", (PyCFunction)py_ue_fquat_get_axis_z, METH_VARARGS, "" },
@@ -63,6 +86,7 @@ static PyMethodDef ue_PyFQuat_methods[] = {
 	{ "inverse", (PyCFunction)py_ue_fquat_inverse, METH_VARARGS, "" },
 	{ "vector", (PyCFunction)py_ue_fquat_vector, METH_VARARGS, "" },
 	{ "get_normalized", (PyCFunction)py_ue_fquat_get_normalized, METH_VARARGS, "" },
+    { "find_between_vectors", (PyCFunction)py_ue_fquat_find_between_vectors, METH_VARARGS | METH_STATIC, "" },
 	{ NULL }  /* Sentinel */
 };
 

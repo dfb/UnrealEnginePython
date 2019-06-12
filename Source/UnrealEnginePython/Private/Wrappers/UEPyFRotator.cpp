@@ -25,12 +25,27 @@ static PyObject *py_ue_frotator_quaternion(ue_PyFRotator *self, PyObject * args)
 	return py_ue_new_fquat(quat);
 }
 
+static PyObject *py_ue_frotator_rotate_vector(ue_PyFRotator *self, PyObject * args) {
+	PyObject *py_obj;
+	if (!PyArg_ParseTuple(args, "O", &py_obj))
+	{
+		return nullptr;
+	}
+
+	ue_PyFVector *py_vec = py_ue_is_fvector(py_obj);
+	if (!py_vec)
+		return PyErr_Format(PyExc_Exception, "argument is not a FVector");
+    return py_ue_new_fvector(self->rot.RotateVector(py_vec->vec));
+
+}
+
 static PyMethodDef ue_PyFRotator_methods[] = {
 	{ "get_vector", (PyCFunction)py_ue_frotator_get_vector, METH_VARARGS, "" },
 	{ "get_euler", (PyCFunction)py_ue_frotator_get_euler, METH_VARARGS, "" },
 	{ "normalized", (PyCFunction)py_ue_frotator_normalized, METH_VARARGS, "" },
 	{ "inversed", (PyCFunction)py_ue_frotator_inversed, METH_VARARGS, "" },
 	{ "quaternion", (PyCFunction)py_ue_frotator_quaternion, METH_VARARGS, "" },
+	{ "rotate_vector", (PyCFunction)py_ue_frotator_rotate_vector, METH_VARARGS, "" },
 	{ NULL }  /* Sentinel */
 };
 

@@ -1179,21 +1179,7 @@ static PyMethodDef ue_PyUObject_methods[] = {
 // destructor
 static void ue_pyobject_dealloc(ue_PyUObject *self)
 {
-#if defined(UEPY_MEMORY_DEBUG)
-	UE_LOG(LogPython, Warning, TEXT("Destroying ue_PyUObject %p mapped to UObject %p"), self, self->ue_object);
-#endif
-	if (self->owned)
-	{
-        FUnrealEnginePythonHouseKeeper::Get()->UntrackUObject(self->ue_object);
-	}
-
-	if (self->auto_rooted && (self->ue_object && self->ue_object->IsValidLowLevel() && self->ue_object->IsRooted()))
-	{
-		self->ue_object->RemoveFromRoot();
-	}
-
 	Py_XDECREF(self->py_dict);
-
 	Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -1326,41 +1312,8 @@ static int ue_PyUObject_setattro(ue_PyUObject *self, PyObject *attr_name, PyObje
 		UProperty *u_property = u_struct->FindPropertyByName(FName(UTF8_TO_TCHAR(attr)));
 		if (u_property)
 		{
-#if WITH_EDITOR
-            if (!self->creating)
-            {
-			    self->ue_object->PreEditChange(u_property);
-            }
-#endif
 			if (ue_py_convert_pyobject(value, u_property, (uint8*)self->ue_object, 0))
 			{
-#if WITH_EDITOR
-                if (!self->creating)
-                {
-				FPropertyChangedEvent PropertyEvent(u_property, EPropertyChangeType::ValueSet);
-				self->ue_object->PostEditChangeProperty(PropertyEvent);
-
-				if (self->ue_object->HasAnyFlags(RF_ArchetypeObject | RF_ClassDefaultObject))
-				{
-					TArray<UObject *> Instances;
-					self->ue_object->GetArchetypeInstances(Instances);
-					for (UObject *Instance : Instances)
-					{
-						Instance->PreEditChange(u_property);
-						if (ue_py_convert_pyobject(value, u_property, (uint8*)Instance, 0))
-						{
-							FPropertyChangedEvent InstancePropertyEvent(u_property, EPropertyChangeType::ValueSet);
-							Instance->PostEditChangeProperty(InstancePropertyEvent);
-						}
-						else
-						{
-							PyErr_SetString(PyExc_ValueError, "invalid value for UProperty");
-							return -1;
-						}
-					}
-				}
-                }
-#endif
 				return 0;
 			}
 			PyErr_SetString(PyExc_ValueError, "invalid value for UProperty");
@@ -1428,9 +1381,6 @@ static PyObject *ue_PyUObject_call(ue_PyUObject *self, PyObject *args, PyObject 
 		{
 			return NULL;
 		}
-		// when new_object is called the reference counting is 2 and is registered in the GC
-		// UObject crated explicitely from python, will be managed by python...
-		FUnrealEnginePythonHouseKeeper::Get()->TrackUObject(ret->ue_object);
 
 		return (PyObject *)ret;
 	}
@@ -1495,7 +1445,7 @@ static PyObject *ue_PyUObject_call(ue_PyUObject *self, PyObject *args, PyObject 
 	return PyErr_Format(PyExc_Exception, "the specified uobject has no __call__ support");
 }
 
-static PyTypeObject ue_PyUObjectType = {
+PyTypeObject ue_PyUObjectType = {
 	PyVarObject_HEAD_INIT(NULL, 0)
 	"unreal_engine.UObject",             /* tp_name */
 	sizeof(ue_PyUObject), /* tp_basicsize */
@@ -1855,35 +1805,7 @@ void unreal_engine_init_py_module()
 
 ue_PyUObject *ue_get_python_uobject(UObject *ue_obj)
 {
-	if (!ue_obj)
-		return nullptr;
-
-	ue_PyUObject *ret = FUnrealEnginePythonHouseKeeper::Get()->GetPyUObject(ue_obj);
-	if (!ret)
-	{
-		if (!ue_obj->IsValidLowLevel() || ue_obj->IsPendingKillOrUnreachable())
-			return nullptr;
-
-		ue_PyUObject *ue_py_object = (ue_PyUObject *)PyObject_New(ue_PyUObject, &ue_PyUObjectType);
-		if (!ue_py_object)
-		{
-			return nullptr;
-		}
-		ue_py_object->ue_object = ue_obj;
-		ue_py_object->py_proxy = nullptr;
-		ue_py_object->auto_rooted = 0;
-		ue_py_object->py_dict = PyDict_New();
-		ue_py_object->owned = 0;
-
-        FUnrealEnginePythonHouseKeeper::Get()->RegisterPyUObject(ue_obj, ue_py_object);
-
-#if defined(UEPY_MEMORY_DEBUG)
-		UE_LOG(LogPython, Warning, TEXT("CREATED UPyObject at %p for %p %s"), ue_py_object, ue_obj, *ue_obj->GetName());
-#endif
-		return ue_py_object;
-	}
-	return ret;
-
+    return FUnrealEnginePythonHouseKeeper::Get()->WrapEngineObject(ue_obj);
 }
 
 ue_PyUObject *ue_get_python_uobject_inc(UObject *ue_obj)
@@ -3296,6 +3218,16 @@ UProperty *new_property_from_pyobject(UObject *owner, const char *prop_name, PyO
             UStructProperty *prop_struct = NewObject<UStructProperty>(owner, UTF8_TO_TCHAR(prop_name), RF_Public);
             prop_struct->Struct = (UScriptStruct*)py_obj->ue_object;
             prop = prop_struct;
+        }
+    }
+    else if PyUnicode_Check(value)
+    {   // Special handling for some oddball types. EEndPlayReason, for example, gets identified as a ByteProperty even though it's
+        // an enum (it's declared as a namespace with an enum inside it). To handle this case, you can annotate a variable with a string
+        // *value* like this:
+        // def ReceiveEndPlay(self, reason:'Byte'):
+        if (!_stricmp(PyUnicode_AsUTF8(value), "byte"))
+        {
+            prop = NewObject<UByteProperty>(owner, UTF8_TO_TCHAR(prop_name), RF_Public);
         }
     }
     return prop;

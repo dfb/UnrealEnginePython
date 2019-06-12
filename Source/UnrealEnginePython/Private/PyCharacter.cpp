@@ -489,5 +489,4 @@ APyCharacter::~APyCharacter()
 
 	// this could trigger the distruction of the python/uobject mapper
 	Py_XDECREF(py_uobject);
-	FUnrealEnginePythonHouseKeeper::Get()->UnregisterPyUObject(this);
 }

@@ -15,6 +15,6 @@ public:
 	DECLARE_FUNCTION(CallPythonCallable);
 
 	PyObject *py_callable;
-    bool use_proxy; // if true, instead of using py_obj for self, use py_obj->py_proxy
+    bool use_pyinst; // if true, instead of using py_obj for self, use instance from the modus tracker
 };
 

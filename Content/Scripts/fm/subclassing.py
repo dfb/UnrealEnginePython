@@ -83,7 +83,7 @@ class MetaBase(type):
         # TODO: add some checks to bases to verify that there is at most 1 engine class present in the ancestry
         # TODO: add some checks to make sure that if __uclass__ is present, it exactly matches the ancestor one (ti's unneeded but harmless)
         #       (eh, I think we should raise an error if it's present)
-        dct['get_py_proxy'] = lambda self:fms.get_py_proxy(self)
+        dct['get_py_proxy'] = dct['get_py_inst'] = lambda self:fms.get_py_inst(self) # the 'proxy' name is for backwards compat
 
         if name == 'BridgeBase':
             pass # No extra processing for this case
@@ -96,6 +96,7 @@ class MetaBase(type):
                 assert engineParentClass is not None, 'Missing __uclass__ property'
             else:
                 engineParentClass = bases[0].engineClass
+            engineParentClass.get_cdo() # not entirely sure this is needed, but make sure the CDO exists since we destroy it during class creation
 
             # create a new corresponding UClass and set up for UPROPERTY handling
             newPyClass.engineClass = fms.create_subclass(name, engineParentClass, newPyClass)
@@ -111,6 +112,7 @@ class MetaBase(type):
             else:
                 metaclass.ProcessBridgeDescendentClassMethods(newPyClass)
 
+            newPyClass.engineClass.get_cdo() # same as above - trigger CDO creation now that the class is more fully set up:
         return newPyClass
 
     @classmethod
@@ -155,7 +157,7 @@ class MetaBase(type):
         side to call that method, and adds a Python callable to that UFUNCTION (*not* to the method directly, so that calls like self.Foo will
         go through the UE4 layer for things like replication).'''
         for k,v in list(newPyClass.__dict__.items()):
-            if k.startswith('__') or k in ('engineClass',):
+            if k.startswith('__') or k in ('engineClass', 'ReceiveDestroyed', 'Destruct'):
                 continue
             if not callable(v):
                 continue
@@ -181,6 +183,22 @@ class MetaBase(type):
 
             # TODO: somewhere in here we should warn if the user tries to override something that is BPCallable but not BPNativeEvent
             # and not BPImeplementableEvent - the engine will allow us but the the results won't work quite right
+
+        # Hook into the ReceiveDestroyed message to inform the housekeeper to release its tracker for this object, but also be sure to
+        # call any subclass' ReceiveDestroyed override.
+        # TODO: need to attach ReceiveDestroyed if subclassing AActor, Destruct for UUserWidget, error on anything else
+        setattr(newPyClass, '_orig_ReceiveDestroyed', newPyClass.__dict__.get('ReceiveDestroyed'))
+        def _RD(self):
+            log('::::::::::::::: ReceiveDestroy', self)
+            fms.on_subclass_inst_begin_destroy(self._instAddr)
+            log('TODO: super.ReceiveDestroyed support??')
+        fms.add_ufunction(newPyClass.engineClass, 'ReceiveDestroyed', _RD, 0)
+
+        def _D(self):
+            log('::::::::::::::: Destruct', self)
+            fms.on_subclass_inst_begin_destroy(self._instAddr)
+            log('TODO: super.Destruct support???')
+        fms.add_ufunction(newPyClass.engineClass, 'Destruct', _D, 0)
 
     @classmethod
     def AddMethodCaller(metaclass, classWithFunction, newPyClass, funcName):

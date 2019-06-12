@@ -294,7 +294,4 @@ APyActor::~APyActor()
 #endif
 
 	Py_XDECREF(py_uobject);
-	FUnrealEnginePythonHouseKeeper::Get()->UnregisterPyUObject(this);
-
-
 }

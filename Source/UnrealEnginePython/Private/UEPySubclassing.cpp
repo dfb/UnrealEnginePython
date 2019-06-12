@@ -43,7 +43,7 @@ int unreal_engine_py_init(ue_PyUObject *self, PyObject *args, PyObject *kwds)
 		self->auto_rooted = 0;
 		self->py_dict = PyDict_New();
 
-		FUnrealEnginePythonHouseKeeper::Get()->RegisterPyUObject(new_class, self);
+        FUnrealEnginePythonHouseKeeper::Get()->WrapEngineObject(new_class);
 
 		PyObject *py_additional_properties = PyDict_New();
 
@@ -326,9 +326,6 @@ int unreal_engine_py_init(ue_PyUObject *self, PyObject *args, PyObject *kwds)
 					return;
 				}
 
-                // set flag to supress edit change events during creation
-                new_self->creating = true;
-
 				// fill __dict__ from class
 				if (u_py_class_casted->py_uobject && u_py_class_casted->py_uobject->py_dict)
 				{
@@ -411,8 +408,6 @@ int unreal_engine_py_init(ue_PyUObject *self, PyObject *args, PyObject *kwds)
 
 				// call __init__
 				u_py_class_casted->CallPyConstructor(new_self);
-
-                new_self->creating = false;
 			}
 		};
 

@@ -9,6 +9,9 @@ void UPythonFunction::SetPyCallable(PyObject *callable)
 	Py_INCREF(py_callable);
 }
 
+extern PyObject *GetPythonSubclassInstance(UObject *engineObj);
+
+
 #if ENGINE_MINOR_VERSION > 18
 void UPythonFunction::CallPythonCallable(UObject *Context, FFrame& Stack, RESULT_DECL)
 #else
@@ -42,10 +45,15 @@ void UPythonFunction::CallPythonCallable(FFrame& Stack, RESULT_DECL)
 	argn = 0;
 
 	if (Context && !is_static) {
-		ue_PyUObject *ue_py_obj = ue_get_python_uobject(Context);
-        PyObject *py_obj = (PyObject *)ue_py_obj;
-        if (ue_py_obj && function->use_proxy)
-            py_obj = ue_py_obj->py_proxy;
+        PyObject *py_obj = nullptr;
+        if (function->use_pyinst)
+        {   // modus subclassing was used, so get the Python instance from its instance tracker
+            py_obj = GetPythonSubclassInstance(Context);
+        }
+        else
+        {   // uepy subclassing was used, so the housekeeper's tracker has the instance
+            py_obj = (PyObject*)ue_get_python_uobject(Context);
+        }
 		if (!py_obj) {
 			unreal_engine_py_log_error();
 			on_error = true;
@@ -192,7 +200,6 @@ UPythonFunction::~UPythonFunction()
 {
 	FScopePythonGIL gil;
 	Py_XDECREF(py_callable);
-	FUnrealEnginePythonHouseKeeper::Get()->UnregisterPyUObject(this);
 #if defined(UEPY_MEMORY_DEBUG)
 	UE_LOG(LogPython, Warning, TEXT("PythonFunction callable %p XDECREF'ed"), this);
 #endif

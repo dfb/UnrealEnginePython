@@ -7,6 +7,7 @@
 #include "Editor/BlueprintGraph/Public/BlueprintActionDatabase.h"
 #endif
 
+//#pragma optimize("", off)
 
 #define LOG(format, ...) UE_LOG(LogPython, Log, TEXT("[%s:%d] %s"), TEXT(__FUNCTION__), __LINE__, *FString::Printf(TEXT(format), ##__VA_ARGS__ ))
 #define LWARN(format, ...) UE_LOG(LogPython, Warning, TEXT("[%s:%d] %s"), TEXT(__FUNCTION__), __LINE__, *FString::Printf(TEXT(format), ##__VA_ARGS__ ))
@@ -14,6 +15,141 @@
 
 #define VALID(obj) (obj != nullptr && obj->IsValidLowLevel())
 #define USEFUL(obj) (VALID(obj) && !obj->IsPendingKill())
+
+/*
+Some core rules/notes:
+- we have engine objects that we want to access from python, so we wrap them in a pyobj that can get back to c++
+- we can implement in python classes that work with the rest of ue4. We do this by dynamically generating a shim class in
+    the engine along with entry points (ufunctions) and public properties (uproperties). The engine instantiates the engine
+    class, which causes a python instance of the python class to be created, and the two are linked, and messages are passed
+    through the shim as needed.
+- any engine object (whether it's implemented in C++, BP, or Py) is instantiated via the engine
+- the fact that two objects were implemented in python doesn't change how they interact - they still interact via the engine
+    layer, they don't store a py ref to each other, etc.
+- any engine object that is accessed via python is kept alive via the PythonHouseKeeper - it forces engine objects to remain
+    alive as long as there are outstanding references to its py wrapper object.
+- any py instance is kept alive by virtue of its engine obj - when the engine obj gets a signal to be destroyed, it releases
+    its ref to the py instance, which should pretty much always be the only ref to it, causing it to be destroyed.
+
+In theory, we don't need a central location to track python subclass instances, because each instance needs to be known only
+by the engine object that owns it - when that object dies, it releases the one and only reference to its python instance. But
+with PIE, it seems that objects don't always receive the necessary messages - an object spawned during PIE doesn't get a
+ReceiveDestroyed call when PIE ends, for example (other messages that are reliable aren't BlueprintImplementableEvent, so
+we can't hook into them). So we centrally track the mapping from the shim engine objects to their corresponding Python
+subclass instances, and then periodically check to see if any of the engine objects are no longer valid, at which point we
+release our ref to the Python instance.
+
+Remember: the PythonHouseKeeper keeps alive engine objects that are being referenced by Python. The SubclassInstanceTracker
+keeps alive (tracks) objects implemented in Python that are used elsewhere in the engine.
+*/
+class FSubclassInstanceTracker
+{
+    struct FEntry
+    {
+        FWeakObjectPtr engineObj; // weakref to the engine shim obj so we don't artificially keep it alive
+        FString objName; // for debugging
+        PyObject *pyInst; // an owned ref to the Python subclass instance the engine shim object refers to
+        FEntry(UObject *object, PyObject *pi)
+        {
+            engineObj = FWeakObjectPtr(object);
+            objName = object->GetName();
+            pyInst = pi;
+        }
+    };
+
+    TDoubleLinkedList<FEntry> entries; // list of all python subclass instances that currently exist
+
+public:
+	static FSubclassInstanceTracker *Get()
+    {
+        static FSubclassInstanceTracker *singleton = nullptr;
+        if (!singleton)
+        {
+            singleton = new FSubclassInstanceTracker();
+
+            // register to be called for certain events
+            //FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddRaw(singleton, &FSubclassInstanceTracker::PruneDeadObjects);
+            FCoreUObjectDelegates::GetPostGarbageCollect().AddRaw(singleton, &FSubclassInstanceTracker::PruneDeadObjects);
+
+#if WITH_EDITOR
+            // PIE blows up if we don't run GC before shutting down
+            //FEditorDelegates::PreBeginPIE.AddRaw(singleton, &FSubclassInstanceTracker::OnPreBeginPIE);
+            //FEditorDelegates::PrePIEEnded.AddRaw(singleton, &FSubclassInstanceTracker::OnPrePIEEnded);
+            FEditorDelegates::EndPIE.AddRaw(singleton, &FSubclassInstanceTracker::OnEndPIE);
+#endif
+        }
+        return singleton;
+    }
+
+    // Scans the list of entries and removes any where the engine object is dead or dying
+    void PruneDeadObjects()
+    {
+        FScopePythonGIL gil;
+        TDoubleLinkedList<FSubclassInstanceTracker::FEntry>::TDoubleLinkedListNode *cur=entries.GetHead(), *next;
+        while (cur != nullptr)
+        {
+            next = cur->GetNextNode();
+            FEntry& entry = cur->GetValue();
+            if (!entry.engineObj.IsValid())
+            {
+                //LOG("Removing engineObj %s (%p) with pyinst %p (rc %d)", *entry.objName, entry.engineObj.Get(), entry.pyInst, entry.pyInst ? Py_REFCNT(entry.pyInst) : -1);
+                Py_CLEAR(entry.pyInst);
+                entries.RemoveNode(cur, true);
+            }
+            cur = next;
+        }
+    }
+
+    void OnEndPIE(bool IsSimulating)
+    {
+        PruneDeadObjects();
+    }
+
+    // For debugging/troubleshooting - scans the entries and warns about anything odd
+    void IntegrityCheck()
+    {
+    }
+
+    // Called when a python subclass object is instantiated - adds an entry to our internal list.
+    void AddEntry(UObject *engineObj, PyObject *pySubclassInst)
+    {
+        Py_INCREF(pySubclassInst);
+        entries.AddTail(FEntry(engineObj, pySubclassInst));
+    }
+
+    // Called by objects that are able to detect on their own that they are dying.
+    void RemoveEntry(UObject *engineObj)
+    {
+        TDoubleLinkedList<FSubclassInstanceTracker::FEntry>::TDoubleLinkedListNode *cur=entries.GetHead(), *next;
+        while (cur != nullptr)
+        {
+            next = cur->GetNextNode();
+            FEntry& entry = cur->GetValue();
+            if (entry.engineObj.Get() == engineObj)
+            {
+                //LOG("Removing engineObj %s (%p) with pyinst %p (rc %d)", *entry.objName, entry.engineObj.Get(), entry.pyInst, entry.pyInst ? Py_REFCNT(entry.pyInst) : -1);
+                Py_CLEAR(entry.pyInst);
+                entries.RemoveNode(cur, true);
+                return;
+            }
+            cur = next;
+        }
+        LERROR("No entry found for engineObj %s (%p)", engineObj && engineObj->IsValidLowLevel() ? *engineObj->GetName() : _T("???"));
+    }
+
+    PyObject *GetPythonSubclassInstance(UObject *engineObj)
+    {
+        for (FEntry& entry : entries)
+        {
+            if (entry.engineObj.Get() == engineObj)
+                return entry.pyInst;
+        }
+        return nullptr;
+    }
+};
+
+// used by PythonFunction to find the py instance for a given engine object
+PyObject *GetPythonSubclassInstance(UObject *engineObj) { return FSubclassInstanceTracker::Get()->GetPythonSubclassInstance(engineObj); }
 
 // called at startup to get info about the engine environment. Returns:
 // 0 = unsure/error
@@ -196,13 +332,6 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
         UObject *engineObj = objInitializer.GetObj();
         if (u_class == engineObj->GetClass())
         {
-            ue_PyUObject *pyObj = ue_get_python_uobject(engineObj);
-            if (!pyObj)
-            {
-                unreal_engine_py_log_error();
-                return;
-            }
-
             UFMPythonClass *fmClass = Cast<UFMPythonClass>(u_class);
             if (!fmClass || !fmClass->pyClass)
             {
@@ -215,9 +344,7 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
             // it isn't fully formed (doesn't have its uprops yet), so below we manually kill it so that on a subsequent use it will
             // be recreated. Anyway, even though we can't prevent the CDO from being created here, we do want to prevent creation of
             // a corresponding Python instance here, just because it will trigger an error in the logs.
-            if (fmClass->creating)
-                pyObj->py_proxy = nullptr;
-            else
+            if (!fmClass->creating)
             {
                 // create and bind an instance of the Python class. By convention, the bridge class takes a single param that tells
                 // the address of the corresponding UObject
@@ -230,20 +357,23 @@ static PyObject *create_subclass(PyObject *self, PyObject *args)
                     PyErr_Format(PyExc_Exception, "Failed to instantiate python class");
                     return;
                 }
-                pyObj->py_proxy = pyInst; // pyInst's ref is now owned by py_proxy. TODO: who decref's this later?
+                FSubclassInstanceTracker::Get()->AddEntry(engineObj, pyInst);
+                Py_DECREF(pyInst);
             }
         }
-
-        // TODO: I think we want pyObj->py_dict and pyInst's dict to be the same?
     };
 
     // we want to force the CDO to be recreated next time it is accessed, so that the Python code has a chance to add in any uprops
-    newClass->GetDefaultObject()->RemoveFromRoot();
-    newClass->GetDefaultObject()->ConditionalBeginDestroy();
-    newClass->ClassDefaultObject = nullptr;
+	UObject *cdo = newClass->GetDefaultObject(false);
+	if (cdo)
+	{
+		cdo->RemoveFromRoot();
+		cdo->ConditionalBeginDestroy();
+		newClass->ClassDefaultObject = nullptr;
+	}
     ((UFMPythonClass*)newClass)->creating = false;
 
-    Py_RETURN_UOBJECT(newClass); // TODO: should this be Py_RETURN_UOBJECTNOINC instead?
+    Py_RETURN_UOBJECT(newClass);
 }
 
 // given a UFunction and a UObject instance, calls that function on that instance
@@ -269,8 +399,8 @@ static PyObject *call_ufunction_object(PyObject *self, PyObject *args)
     return ret;
 }
 
-// given a UObject that was instantiated via a bridge class, return its python proxy object
-static PyObject *get_py_proxy(PyObject *self, PyObject *args)
+// given a UObject that was instantiated via a bridge class, return its python instance object
+static PyObject *get_py_inst(PyObject *self, PyObject *args)
 {
     PyObject *pyEngineObj;
     if (!PyArg_ParseTuple(args, "O", &pyEngineObj))
@@ -280,12 +410,11 @@ static PyObject *get_py_proxy(PyObject *self, PyObject *args)
     if (!engineObj)
         return PyErr_Format(PyExc_Exception, "That object is not a UObject");
 
-    ue_PyUObject *pyObj = ue_get_python_uobject(engineObj);
-    if (!pyObj)
+    PyObject *pyInst = GetPythonSubclassInstance(engineObj);
+    if (!pyInst)
         return PyErr_Format(PyExc_Exception, "No py obj for that UObject");
 
-    Py_INCREF(pyObj->py_proxy);
-    return pyObj->py_proxy;
+    return pyInst;
 }
 
 // given self.instAddr, returns it wrapped in a ue_PyUObject. Note that hanging
@@ -301,6 +430,22 @@ static PyObject *get_ue_inst(PyObject *self, PyObject *args)
     if (!USEFUL(engineObj))
         return PyErr_Format(PyExc_Exception, "Invalid UObject");
 	Py_RETURN_UOBJECT(engineObj);
+}
+
+// called by subclassing.py when an engine object subclassed in Python receives
+// the BeginDestroy (for AActor) or Destruct (for UUserWidget) messages, to tell
+// instance tracker that it should release its extra ref to the object.
+static PyObject *on_subclass_inst_begin_destroy(PyObject *self, PyObject *args)
+{
+    unsigned long long instAddr;
+    if (!PyArg_ParseTuple(args, "K", &instAddr))
+        return NULL;
+
+    UObject *engineObj = (UObject *)instAddr;
+    if (!USEFUL(engineObj))
+        return PyErr_Format(PyExc_Exception, "Invalid UObject");
+    FSubclassInstanceTracker::Get()->RemoveEntry(engineObj);
+    return Py_BuildValue("");
 }
 
 // adds a UFUNCTION to a UClass that calls a Python callable
@@ -321,7 +466,7 @@ static PyObject *add_ufunction(PyObject *self, PyObject *args)
     UPythonFunction *newFunc = (UPythonFunction *)unreal_engine_add_function(engineClass, funcName, pyFunc, funcFlags);
     if (newFunc)
     {
-        newFunc->use_proxy = true; // hack: we store 'self' in py_proxy
+        newFunc->use_pyinst = true; // tells the function handler to use py_obj->py_inst instead of py_obj for 'self'
         return Py_BuildValue("");
     }
     else
@@ -534,8 +679,8 @@ static PyObject *set_uproperty_value(PyObject *self, PyObject *args)
     }
 
 #if WITH_EDITOR
-    if (emitEvents)
-        engineObj->PreEditChange(prop);
+    //if (emitEvents)
+        //engineObj->PreEditChange(prop);
 #endif
 
     if (ue_py_convert_pyobject(pyValue, prop, (uint8 *)engineObj, 0))
@@ -543,8 +688,13 @@ static PyObject *set_uproperty_value(PyObject *self, PyObject *args)
 #if WITH_EDITOR
         if (emitEvents)
         {
-            FPropertyChangedEvent PropertyEvent(prop, EPropertyChangeType::ValueSet);
-            engineObj->PostEditChangeProperty(PropertyEvent);
+            /*
+            For now I'm gonna try removing this out because I *think* that these only need to be called
+            when you are externally modifying the object i.e. from the editor details pane. At worst this
+            will only break things in the editor at which point try something else...
+            */
+            //FPropertyChangedEvent PropertyEvent(prop, EPropertyChangeType::ValueSet);
+            //engineObj->PostEditChangeProperty(PropertyEvent);
         }
         // TODO: original had special code for archtype/CDO objects
 #endif
@@ -625,12 +775,23 @@ static PyObject *engine_gc(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+static PyObject *hk_stats(PyObject *self, PyObject *args)
+{
+#if WITH_EDITOR
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    FUnrealEnginePythonHouseKeeper::Get()->DumpState();
+#endif
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef module_methods[] = {
     {"get_engine_env_mode", get_engine_env_mode, METH_VARARGS, ""},
     {"create_subclass", create_subclass, METH_VARARGS, ""},
     {"call_ufunction_object", call_ufunction_object, METH_VARARGS, ""},
-    {"get_py_proxy", get_py_proxy, METH_VARARGS, ""},
+    {"get_py_inst", get_py_inst, METH_VARARGS, ""},
     {"get_ue_inst", get_ue_inst, METH_VARARGS, ""},
+    {"on_subclass_inst_begin_destroy", on_subclass_inst_begin_destroy, METH_VARARGS, ""},
     {"add_ufunction", add_ufunction, METH_VARARGS, ""},
     {"get_ufunction_names", get_ufunction_names, METH_VARARGS, ""},
     {"get_ufunction_object", get_ufunction_object, METH_VARARGS, ""},
@@ -640,6 +801,7 @@ static PyMethodDef module_methods[] = {
     {"get_uproperty_value", get_uproperty_value, METH_VARARGS, ""},
     {"add_interface", add_interface, METH_VARARGS, ""},
     {"engine_gc", engine_gc, METH_VARARGS, ""},
+    {"hk_stats", hk_stats, METH_VARARGS, ""},
     { NULL, NULL },
 };
 

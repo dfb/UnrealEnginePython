@@ -150,6 +150,16 @@ class MetaBase(type):
             # Make it so that from Python you can use that name to call the UFUNCTION version in UE4
             metaclass.AddMethodCaller(engineParentClass, newPyClass, funcName)
 
+        # Hook into destruction-related messages to inform the subclass instance tracker to release its tracker for this object.
+        def _(self, *args, **kwargs):
+            fms.on_subclass_inst_begin_destroy(self._instAddr)
+        if engineParentClass.is_child_of(engine_classes.Actor):
+            setattr(newPyClass, 'ReceiveDestroyed', _)
+        elif engineParentClass.is_child_of(engine_classes.UserWidget):
+            setattr(newPyClass, 'Destruct', _)
+        else:
+            log('WARNING: subclassing something (%r, %r) that is neither an Actor nor a UserWidget descendent - instance cleanup might not work right unless subclass calls fms.on_subclass_inst_begin_destroy' % (engineParentClass.get_name(), newPyClass))
+
     @classmethod
     def ProcessBridgeDescendentClassMethods(metaclass, newPyClass):
         '''Called from __new__ to handle the case where the class being created is a descendent of a bridge class. For each method that is marked
@@ -157,7 +167,7 @@ class MetaBase(type):
         side to call that method, and adds a Python callable to that UFUNCTION (*not* to the method directly, so that calls like self.Foo will
         go through the UE4 layer for things like replication).'''
         for k,v in list(newPyClass.__dict__.items()):
-            if k.startswith('__') or k in ('engineClass', 'ReceiveDestroyed', 'Destruct'):
+            if k.startswith('__') or k in ('engineClass',):
                 continue
             if not callable(v):
                 continue
@@ -184,21 +194,14 @@ class MetaBase(type):
             # TODO: somewhere in here we should warn if the user tries to override something that is BPCallable but not BPNativeEvent
             # and not BPImeplementableEvent - the engine will allow us but the the results won't work quite right
 
-        # Hook into the ReceiveDestroyed message to inform the housekeeper to release its tracker for this object, but also be sure to
-        # call any subclass' ReceiveDestroyed override.
-        # TODO: need to attach ReceiveDestroyed if subclassing AActor, Destruct for UUserWidget, error on anything else
-        setattr(newPyClass, '_orig_ReceiveDestroyed', newPyClass.__dict__.get('ReceiveDestroyed'))
-        def _RD(self):
-            log('::::::::::::::: ReceiveDestroy', self)
+        # If the subclass doesn't implement ReceiveDestroyed (AActor) or Destruct (UUserWidget) methods, make sure the instance
+        # is still freed from the subclass instance tracker.
+        def _(self, *args, **kwargs):
             fms.on_subclass_inst_begin_destroy(self._instAddr)
-            log('TODO: super.ReceiveDestroyed support??')
-        fms.add_ufunction(newPyClass.engineClass, 'ReceiveDestroyed', _RD, 0)
-
-        def _D(self):
-            log('::::::::::::::: Destruct', self)
-            fms.on_subclass_inst_begin_destroy(self._instAddr)
-            log('TODO: super.Destruct support???')
-        fms.add_ufunction(newPyClass.engineClass, 'Destruct', _D, 0)
+        if newPyClass.engineClass.is_child_of(engine_classes.Actor) and 'ReceiveDestroyed' not in newPyClass.__dict__:
+            fms.add_ufunction(newPyClass.engineClass, 'ReceiveDestroyed', _, 0)
+        if newPyClass.engineClass.is_child_of(engine_classes.UserWidget) and 'Destruct' not in newPyClass.__dict__:
+            fms.add_ufunction(newPyClass.engineClass, 'Destruct', _, 0)
 
     @classmethod
     def AddMethodCaller(metaclass, classWithFunction, newPyClass, funcName):

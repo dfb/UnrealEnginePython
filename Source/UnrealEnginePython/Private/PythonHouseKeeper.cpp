@@ -187,7 +187,9 @@ void FUnrealEnginePythonHouseKeeper::OnEndPIE(bool IsSimulating)
     FScopePythonGIL gil;
     PyGC_Collect();
     PruneUnusedPyObjTrackers();
+#endif
 
+#if defined(UEPY_MEMORY_DEBUG)
     // No PIE world objects should remain at this point
     for (auto& entry : UObjectPyMapping)
     {

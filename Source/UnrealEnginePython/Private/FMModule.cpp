@@ -74,7 +74,7 @@ public:
 #if WITH_EDITOR
             // PIE blows up if we don't run GC before shutting down
             //FEditorDelegates::PreBeginPIE.AddRaw(singleton, &FSubclassInstanceTracker::OnPreBeginPIE);
-            //FEditorDelegates::PrePIEEnded.AddRaw(singleton, &FSubclassInstanceTracker::OnPrePIEEnded);
+            FEditorDelegates::PrePIEEnded.AddRaw(singleton, &FSubclassInstanceTracker::OnPrePIEEnded);
             FEditorDelegates::EndPIE.AddRaw(singleton, &FSubclassInstanceTracker::OnEndPIE);
 #endif
         }
@@ -92,7 +92,9 @@ public:
             FEntry& entry = cur->GetValue();
             if (!entry.engineObj.IsValid())
             {
-                //LOG("Removing engineObj %s (%p) with pyinst %p (rc %d)", *entry.objName, entry.engineObj.Get(), entry.pyInst, entry.pyInst ? Py_REFCNT(entry.pyInst) : -1);
+#if defined(UEPY_MEMORY_DEBUG)
+                LOG("Removing engineObj %s (%p) with pyinst %p (rc %d)", *entry.objName, entry.engineObj.Get(), entry.pyInst, entry.pyInst ? Py_REFCNT(entry.pyInst) : -1);
+#endif
                 Py_CLEAR(entry.pyInst);
                 entries.RemoveNode(cur, true);
             }
@@ -100,9 +102,20 @@ public:
         }
     }
 
+    void OnPrePIEEnded(bool IsSimulating)
+    {
+        FScopePythonGIL gil;
+        PyGC_Collect();
+        PruneDeadObjects();
+        FUnrealEnginePythonHouseKeeper::Get()->PruneUnusedPyObjTrackers();
+    }
+
     void OnEndPIE(bool IsSimulating)
     {
+        FScopePythonGIL gil;
+        PyGC_Collect();
         PruneDeadObjects();
+        FUnrealEnginePythonHouseKeeper::Get()->PruneUnusedPyObjTrackers();
     }
 
     // For debugging/troubleshooting - scans the entries and warns about anything odd
@@ -819,4 +832,7 @@ void fm_init_module()
         PyDict_SetItemString(module_dict, m->ml_name, func);
         Py_DECREF(func);
     }
+
+    // trigger singleton instance to be created early - hopefully earlier than the PythonHouseKeeper
+    FSubclassInstanceTracker::Get();
 }

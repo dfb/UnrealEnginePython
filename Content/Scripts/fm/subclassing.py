@@ -47,10 +47,11 @@ def ufunction(f, *args):
 # used for declaring UPROPERTYs. Use when creating class vars: myVar = uproperty(FVector, FVector(1,2,3)). By default, implies BlueprintReadWrite.
 # TODO: add support for replication, editanywhere, BPReadOnly, repnotify, and other flags. myVar = uproperty(default, *kwFlags)
 class uproperty:
-    def __init__(self, type, default, is_class=False): # TODO: make default optional, but find a suitable default (e.g. int=0, bool=False, etc. Or, let them give a default and we infer the type in many cases
+    def __init__(self, type, default, is_class=False, **kwargs): # TODO: make default optional, but find a suitable default (e.g. int=0, bool=False, etc. Or, let them give a default and we infer the type in many cases
         self.type = type
         self.default = default
         self.is_class = is_class # i.e. the property holds a UClass not a UObject
+        self.extra = dict(kwargs)
 
 def CombinedPropertyDefaults(cls):
     '''Recursively collects all uproperty defaults for this and all parent python classes'''
@@ -80,6 +81,9 @@ class MetaBase(type):
 
         newPyClass = super().__new__(metaclass, name, bases, dct)
 
+        # totally hacked in for now but I really want the uproperty info
+        newPyClass.__property_details__ = uprops
+
         # TODO: add some checks to bases to verify that there is at most 1 engine class present in the ancestry
         # TODO: add some checks to make sure that if __uclass__ is present, it exactly matches the ancestor one (ti's unneeded but harmless)
         #       (eh, I think we should raise an error if it's present)
@@ -90,12 +94,22 @@ class MetaBase(type):
         else:
             assert len(bases) > 0, 'This class must subclass something else'
             assert issubclass(newPyClass, BridgeBase), 'MetaBase is only for use with subclassing BridgeBase'
-            isBridge = bases[0] == BridgeBase # is this a bridge class or some further descendent?
-            if isBridge:
-                engineParentClass = getattr(newPyClass, '__uclass__', None)
-                assert engineParentClass is not None, 'Missing __uclass__ property'
-            else:
-                engineParentClass = bases[0].engineClass
+
+            engineClasses = set()
+            for cls in bases:
+                isBridge = cls == BridgeBase # is this a bridge class or some further descendent?
+                if isBridge:
+                    engineParentClass = getattr(newPyClass, '__uclass__', None)
+                    assert engineParentClass is not None, 'Missing __uclass__ property'
+                else:
+                    engineParentClass = getattr(cls, 'engineClass', None)
+
+                if engineParentClass:
+                    engineClasses.add(engineParentClass)
+
+            assert len(engineClasses) == 1, 'Only one engine class allowed'
+
+            engineParentClass = engineClasses.pop()
             engineParentClass.get_cdo() # not entirely sure this is needed, but make sure the CDO exists since we destroy it during class creation
 
             # create a new corresponding UClass and set up for UPROPERTY handling

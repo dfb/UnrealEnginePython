@@ -147,7 +147,7 @@ public:
             }
             cur = next;
         }
-        LERROR("No entry found for engineObj %s (%p)", engineObj && engineObj->IsValidLowLevel() ? *engineObj->GetName() : _T("???"));
+        LERROR("No entry found for engineObj %s (%p)", engineObj && engineObj->IsValidLowLevel() ? *engineObj->GetName() : TEXT("???"));
     }
 
     PyObject *GetPythonSubclassInstance(UObject *engineObj)

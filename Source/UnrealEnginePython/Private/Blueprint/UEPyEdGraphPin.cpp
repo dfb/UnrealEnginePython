@@ -282,11 +282,11 @@ static PyGetSetDef ue_PyEdGraphPin_getseters[] = {
 
 static PyObject *ue_PyEdGraphPin_str(ue_PyEdGraphPin *self)
 {
-    FString dir = _T("???");
+    FString dir = TEXT("???");
     if (self->pin->Direction == EEdGraphPinDirection::EGPD_Input)
-        dir = _T("in");
+        dir = TEXT("in");
     else if (self->pin->Direction == EEdGraphPinDirection::EGPD_Output)
-        dir = _T("out");
+        dir = TEXT("out");
 	return PyUnicode_FromFormat("<unreal_engine.EdGraphPin {'name': '%s', 'type': '%s', 'direction': '%s'}>",
 #if ENGINE_MINOR_VERSION > 18
 		TCHAR_TO_UTF8(*self->pin->PinName.ToString()), TCHAR_TO_UTF8(*self->pin->PinType.PinCategory.ToString()), TCHAR_TO_UTF8(*dir));

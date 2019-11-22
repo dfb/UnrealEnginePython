@@ -234,7 +234,7 @@ ue_PyUObject *FUnrealEnginePythonHouseKeeper::WrapEngineObject(UObject *Object)
     if (!Object || !Object->IsValidLowLevel() || Object->IsPendingKillOrUnreachable())
     {
 #if defined(UEPY_MEMORY_DEBUG)
-        UE_LOG(LogPython, Error, _T("Cannot WrapEngineObject for invalid object %p"), Object);
+        UE_LOG(LogPython, Error, TEXT("Cannot WrapEngineObject for invalid object %p"), Object);
 #endif
         return nullptr;
     }
@@ -250,7 +250,7 @@ ue_PyUObject *FUnrealEnginePythonHouseKeeper::WrapEngineObject(UObject *Object)
         return nullptr;
     //LOG("XXX Wrapping %s (%p) in pyobj %p", *Object->GetName(), Object, ue_py_object);
 #if defined(UEPY_MEMORY_DEBUG)
-    UE_LOG(LogPython, Warning, _T("REF CREATE for %s (%p), py %p"), *Object->GetName(), Object, ue_py_object);
+    UE_LOG(LogPython, Warning, TEXT("REF CREATE for %s (%p), py %p"), *Object->GetName(), Object, ue_py_object);
 #endif
     ue_py_object->ue_object = Object;
     ue_py_object->py_proxy = nullptr;

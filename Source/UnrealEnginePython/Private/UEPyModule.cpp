@@ -3377,9 +3377,9 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
                 for (auto i=0; i < PyTuple_Size(py_return_value); i++)
                 {
                     PyObject *item = PyTuple_GetItem(py_return_value, i);
-                    FString out_param_name(_T("ReturnValue"));
+                    FString out_param_name(TEXT("ReturnValue"));
                     if (i != return_param_index)
-                        out_param_name = FString::Printf(_T("OutParam%d"), i);
+                        out_param_name = FString::Printf(TEXT("OutParam%d"), i);
                     UProperty *prop = new_property_from_pyobject(function, TCHAR_TO_UTF8(*out_param_name), item);
                     if (prop)
                     {
@@ -3401,7 +3401,7 @@ UFunction *unreal_engine_add_function(UClass *u_class, char *name, PyObject *py_
             else
             {   // either a single output param or a single return value
                 //UE_LOG(LogPython, Warning, TEXT("Return value or single output value found"));
-                FString param_name(return_param_index == -1 ? _T("OutParam0") : _T("ReturnValue"));
+                FString param_name(return_param_index == -1 ? TEXT("OutParam0") : TEXT("ReturnValue"));
                 UProperty *prop = new_property_from_pyobject(function, TCHAR_TO_UTF8(*param_name), py_return_value);
                 if (prop)
                 {

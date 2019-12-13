@@ -650,7 +650,7 @@ static PyObject *add_uproperty(PyObject *self, PyObject *args)
 
     if (newProp)
     {   // TODO: check this
-        uint64 flags = CPF_Edit | CPF_BlueprintVisible | CPF_ZeroConstructor;
+        EPropertyFlags flags = CPF_Edit | CPF_BlueprintVisible | CPF_ZeroConstructor;
         newProp->SetPropertyFlags(flags);
         newProp->ArrayDim = 1;
         UStruct *us = (UStruct *)engineClass;
